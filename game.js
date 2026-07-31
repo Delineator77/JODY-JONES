@@ -27,6 +27,7 @@
     killfeed: $('killfeed'), popups: $('popups'), crosshair: $('crosshair'),
     hitmarker: $('hitmarker'), banner: $('banner'), bannerBig: $('bannerBig'),
     bannerSub: $('bannerSub'), vignette: $('vignette'), dmgDirs: $('dmgDirs'),
+    steerHint: $('steerHint'),
   };
 
   /* =========================================================================
@@ -890,23 +891,35 @@
   /* =========================================================================
      INPUT
      ========================================================================= */
-  const input = { keys: {}, look: new THREE.Vector2(), firing: false, locked: false };
+  const input = { keys: {}, look: new THREE.Vector2(), firing: false, locked: false,
+    steer: new THREE.Vector2(), lockBlocked: false };
   const player = {
     pos: new THREE.Vector3(0, 1.7, 14), vel: new THREE.Vector3(), yaw: Math.PI, pitch: 0,
     onGround: true, height: 1.7, radius: 0.4, health: 100, maxHealth: 100, regenT: 0, alive: true, stepT: 0,
   };
 
   function onMouseMove(e) {
-    if (!input.locked) return;
-    const s = 0.0022;
-    player.yaw -= e.movementX * s; player.pitch -= e.movementY * s;
-    player.pitch = clamp(player.pitch, -Math.PI / 2 + 0.05, Math.PI / 2 - 0.05);
-    input.look.x = e.movementX; input.look.y = e.movementY;
+    if (input.locked) {
+      const s = 0.0022;
+      player.yaw -= e.movementX * s; player.pitch -= e.movementY * s;
+      player.pitch = clamp(player.pitch, -Math.PI / 2 + 0.05, Math.PI / 2 - 0.05);
+      input.look.x = e.movementX; input.look.y = e.movementY;
+      return;
+    }
+    // Fallback steer mode (pointer lock unavailable, e.g. sandboxed iframe):
+    // cursor position relative to screen centre drives look velocity.
+    if (input.lockBlocked && running && !paused) {
+      const nx = (e.clientX / window.innerWidth) * 2 - 1;
+      const ny = (e.clientY / window.innerHeight) * 2 - 1;
+      const dz = 0.10; // dead-zone so the centre is calm
+      input.steer.x = Math.abs(nx) < dz ? 0 : (nx - Math.sign(nx) * dz) / (1 - dz);
+      input.steer.y = Math.abs(ny) < dz ? 0 : (ny - Math.sign(ny) * dz) / (1 - dz);
+    }
   }
   document.addEventListener('mousemove', onMouseMove);
   document.addEventListener('mousedown', (e) => {
     if (!running || paused) return;
-    if (e.button === 0) { input.firing = true; if (!input.locked) requestLock(); }
+    if (e.button === 0) { input.firing = true; if (!input.locked && !input.lockBlocked) requestLock(); }
     if (e.button === 2) { input.firing = false; Weapon.setADS(true); }
   });
   document.addEventListener('mouseup', (e) => {
@@ -921,10 +934,25 @@
   });
   document.addEventListener('keyup', (e) => { input.keys[e.code] = false; });
 
-  function requestLock() { renderer.domElement.requestPointerLock && renderer.domElement.requestPointerLock(); }
+  function requestLock() {
+    if (input.lockBlocked) return;
+    if (!renderer.domElement.requestPointerLock) { enableSteerMode(); return; }
+    try {
+      const p = renderer.domElement.requestPointerLock();
+      if (p && typeof p.catch === 'function') p.catch(() => enableSteerMode());
+    } catch (_) { enableSteerMode(); return; }
+    // If lock isn't granted shortly (blocked by a sandboxed iframe), fall back.
+    setTimeout(() => { if (!input.locked && !input.lockBlocked) enableSteerMode(); }, 450);
+  }
+  function enableSteerMode() {
+    if (input.lockBlocked) return;
+    input.lockBlocked = true;
+    if (dom.steerHint) dom.steerHint.classList.remove('hidden');
+  }
   document.addEventListener('pointerlockchange', () => {
     input.locked = document.pointerLockElement === renderer.domElement;
-    if (!input.locked && running && !paused) doPause();
+    if (input.locked) input.lockBlocked = false; // real lock works — never fall back
+    else if (running && !paused && !input.lockBlocked) doPause();
   });
 
   /* =========================================================================
@@ -1133,6 +1161,13 @@
   const _forward = new THREE.Vector3(), _right = new THREE.Vector3(), _wish = new THREE.Vector3();
   function updatePlayer(dt) {
     if (!player.alive) return;
+    // fallback steer-look (only when pointer lock is unavailable)
+    if (input.lockBlocked && (input.steer.x || input.steer.y)) {
+      const turn = 2.6; // rad/s at full deflection
+      player.yaw -= input.steer.x * turn * dt;
+      player.pitch = clamp(player.pitch - input.steer.y * turn * 0.75 * dt,
+        -Math.PI / 2 + 0.05, Math.PI / 2 - 0.05);
+    }
     // orientation from yaw/pitch
     recoilKick = lerp(recoilKick, 0, dt * 9);
     camera.rotation.set(0, 0, 0);
