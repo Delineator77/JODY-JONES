@@ -67,6 +67,33 @@
   composer.addPass(new THREE.RenderPass(scene, camera));
   const bloom = new THREE.UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.35, 0.7, 0.82);
   composer.addPass(bloom);
+  // Full-screen INK pass — Sobel edge detect on the rendered frame draws navy comic
+  // outlines at every silhouette + color boundary. This is what sells the graphic-novel look.
+  const inkPass = new THREE.ShaderPass({
+    uniforms: {
+      tDiffuse: { value: null },
+      uRes: { value: new THREE.Vector2(innerWidth, innerHeight) },
+      uStrength: { value: 0.85 }, uThreshold: { value: 0.10 },
+      uInk: { value: new THREE.Color(0x0a1020) },
+    },
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+    fragmentShader:
+      'uniform sampler2D tDiffuse; uniform vec2 uRes; uniform float uStrength; uniform float uThreshold; uniform vec3 uInk; varying vec2 vUv;\n' +
+      'float lum(vec3 c){ return dot(c, vec3(0.299,0.587,0.114)); }\n' +
+      'void main(){\n' +
+      '  vec2 px = 1.0/uRes;\n' +
+      '  float tl=lum(texture2D(tDiffuse,vUv+px*vec2(-1.,-1.)).rgb), t=lum(texture2D(tDiffuse,vUv+px*vec2(0.,-1.)).rgb), tr=lum(texture2D(tDiffuse,vUv+px*vec2(1.,-1.)).rgb);\n' +
+      '  float l=lum(texture2D(tDiffuse,vUv+px*vec2(-1.,0.)).rgb), r=lum(texture2D(tDiffuse,vUv+px*vec2(1.,0.)).rgb);\n' +
+      '  float bl=lum(texture2D(tDiffuse,vUv+px*vec2(-1.,1.)).rgb), bm=lum(texture2D(tDiffuse,vUv+px*vec2(0.,1.)).rgb), br=lum(texture2D(tDiffuse,vUv+px*vec2(1.,1.)).rgb);\n' +
+      '  float gx = -tl -2.0*l -bl + tr + 2.0*r + br;\n' +
+      '  float gy = -tl -2.0*t -tr + bl + 2.0*bm + br;\n' +
+      '  float mag = sqrt(gx*gx + gy*gy);\n' +
+      '  float edge = smoothstep(uThreshold, uThreshold+0.35, mag);\n' +
+      '  vec4 base = texture2D(tDiffuse, vUv);\n' +
+      '  gl_FragColor = vec4(mix(base.rgb, uInk, edge*uStrength), base.a);\n' +
+      '}',
+  });
+  composer.addPass(inkPass);
 
   /* =========================================================================
      CEL-SHADING HELPERS  (toon ramp, toon material, ink outline)
@@ -243,6 +270,36 @@
     });
     const skyMesh = new THREE.Mesh(g, m); skyMesh.renderOrder = -1;
     if (!location.search.includes('nosky')) scene.add(skyMesh);
+  })();
+
+  /* ----- Stylized cel clouds (big, simple, ivory-topped / navy-bellied) ---- */
+  const clouds = [];
+  (function makeClouds() {
+    function cloudTexture(warm) {
+      const c = document.createElement('canvas'); c.width = 256; c.height = 128;
+      const x = c.getContext('2d');
+      const lumps = [[64, 84, 34], [104, 66, 44], [150, 62, 48], [196, 82, 38], [128, 92, 46], [92, 96, 32], [172, 94, 34]];
+      // ivory body
+      x.fillStyle = warm ? '#f0d9b0' : '#e7dcc4';
+      for (const [cx, cy, r] of lumps) { x.beginPath(); x.arc(cx, cy, r, 0, 7); x.fill(); }
+      // navy underbelly shading, clipped to the cloud shape
+      x.globalCompositeOperation = 'source-atop';
+      const g = x.createLinearGradient(0, 46, 0, 122);
+      g.addColorStop(0, 'rgba(231,220,196,0)'); g.addColorStop(1, 'rgba(20,32,58,0.6)');
+      x.fillStyle = g; x.fillRect(0, 0, 256, 128);
+      const t = new THREE.CanvasTexture(c); return t;
+    }
+    const texWarm = cloudTexture(true), texCool = cloudTexture(false);
+    const specs = [
+      [-46, 26, -95, 42, texWarm, 0.95], [10, 34, -110, 54, texCool, 0.85],
+      [52, 24, -90, 38, texWarm, 0.9], [-14, 20, -78, 30, texCool, 0.8], [34, 40, -120, 48, texCool, 0.75],
+    ];
+    for (const s of specs) {
+      const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: s[4], transparent: true, opacity: s[5], depthWrite: false, fog: false }));
+      spr.position.set(s[0], s[1], s[2]); spr.scale.set(s[3] * 1.9, s[3], 1);
+      spr.userData = { vx: rnd(0.15, 0.4) };
+      scene.add(spr); clouds.push(spr);
+    }
   })();
 
   /* =========================================================================
@@ -880,6 +937,7 @@
     camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight);
     bloom.setSize(innerWidth, innerHeight);
+    inkPass.uniforms.uRes.value.set(innerWidth, innerHeight);
     for (const m of inkMats) m.uniforms.uAspect.value = innerWidth / innerHeight;
   });
 
@@ -922,6 +980,8 @@
     for (const r of reeds) { r.rotation.z = Math.sin(clock * 1.6 + r.userData.phase) * 0.18; }
     // haze drift
     for (const h of haze) { h.position.x += h.userData.vx * dt; if (h.position.x > 34) h.position.x = -34; h.material.opacity = Math.min(0.14, h.material.opacity + dt * 0.001); }
+    // clouds drift slowly across the sky strip
+    for (const c of clouds) { c.position.x += c.userData.vx * dt; if (c.position.x > 70) c.position.x = -70; }
     // birds circle
     for (const b of birds) { const u = b.userData; u.a += u.sp * dt; b.position.set(u.cx + Math.cos(u.a) * u.r, u.y, u.cz + Math.sin(u.a) * u.r); b.rotation.z = -u.a; }
     // stones
