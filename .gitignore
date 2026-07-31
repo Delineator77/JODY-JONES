@@ -1,0 +1,10 @@
+# Dev tooling only (screenshot harness + three.js vendoring source)
+node_modules/
+package-lock.json
+
+# Transient render captures from the Gauntlet Loop critics
+shots/*.png
+tools/webgl_test.html
+
+# OS
+.DS_Store
