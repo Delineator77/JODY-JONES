@@ -60,7 +60,7 @@
   scene.fog = new THREE.FogExp2(0x1a2740, 0.006);   // light canyon haze — never washes the hero wall
 
   const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.05, 900);
-  const CAM_BASE = new THREE.Vector3(0, 1.45, 7.2);   // crouched behind the boulder
+  const CAM_BASE = new THREE.Vector3(0, 1.9, 8.0);   // standing behind the boulder, looking over it
   camera.position.copy(CAM_BASE);
 
   const composer = new THREE.EffectComposer(renderer);
@@ -199,7 +199,7 @@
       const prof = opts.profile ? opts.profile(i / (cols - 1)) : 1;
       const h = height * prof * (0.6 + 0.4 * (0.5 + 0.5 * Math.sin(i * 1.7) + 0.28 * Math.sin(i * 0.6 + 1.1)));
       const d = rnd(0.9, depthAmt);
-      const lit = clamp(0.5 + 0.5 * Math.sin(i * 0.7 + 1.0) + 0.22 * Math.sin(i * 2.9), 0, 1);
+      const lit = clamp(0.5 + 0.5 * Math.sin(i * 0.7 + 1.0) + 0.22 * Math.sin(i * 2.9) + (opts.warm || 0), 0, 1);
       const geo = new THREE.BoxGeometry(w, h, d, 1, 4, 1);
       const pos = geo.attributes.position, colors = new Float32Array(pos.count * 3), c = new THREE.Color();
       for (let k = 0; k < pos.count; k++) {
@@ -218,15 +218,12 @@
   }
   const FLOOR = -2.4;   // canyon floor / waterline height
   const cliffs = new THREE.Group();
-  // Far wall behind the enemies — kept low so a warm sky strip reads above its jagged top.
-  cliffs.add(buildCliff(340, 34, 54, new THREE.Vector3(0, FLOOR, -36), 0, 5));
-  // Walls framing left (upstream) and right (downstream) — wide + moderate height so they
-  // frame the edges and recede without swallowing the river + far bank.
-  cliffs.add(buildCliff(220, 72, 22, new THREE.Vector3(-70, FLOOR, -26), Math.PI / 2 + 0.10, 10));
-  cliffs.add(buildCliff(220, 72, 22, new THREE.Vector3(70, FLOOR, -26), -Math.PI / 2 - 0.10, 10));
-  // A couple of tall buttresses just at the frame edges for the "trapped" scale.
-  cliffs.add(buildCliff(40, 150, 4, new THREE.Vector3(-52, FLOOR, 2), Math.PI / 2, 8));
-  cliffs.add(buildCliff(40, 150, 4, new THREE.Vector3(52, FLOOR, 2), -Math.PI / 2, 8));
+  // Far wall closing the canyon behind the enemies — capped so a warm sky strip reads above.
+  cliffs.add(buildCliff(210, 30, 40, new THREE.Vector3(0, FLOOR, -34), 0, 5));
+  // Side walls: brought in so they rise on the left/right BEHIND the far bank, leaving a
+  // central sky gap (the canyon opening) — the gang-on-the-bank composition.
+  cliffs.add(buildCliff(130, 118, 16, new THREE.Vector3(-33, FLOOR, -2), Math.PI / 2 + 0.05, 12, { warm: 0.5 }));   // left wall catches the low sun
+  cliffs.add(buildCliff(130, 118, 16, new THREE.Vector3(33, FLOOR, -2), -Math.PI / 2 - 0.05, 12, { warm: -0.15 })); // right wall in shadow
   scene.add(cliffs);
 
   /* ----- Sky strip -------------------------------------------------------- */
@@ -277,21 +274,21 @@
         '  vec2 flow = vec2(uTime*1.4, uTime*0.25);\n' +
         '  float n = fbm(vP*vec2(0.9,1.7) - flow);\n' +
         '  float band = floor(n*4.0)/4.0;\n' +               // posterized broad masses
-        '  vec3 deep = vec3(0.043,0.086,0.188);\n' +          // waterDeep
-        '  vec3 lit  = vec3(0.133,0.263,0.435);\n' +          // waterLit
-        '  vec3 col = mix(deep, lit, band*0.9 + 0.1);\n' +
+        '  vec3 deep = vec3(0.055,0.10,0.205);\n' +
+        '  vec3 lit  = vec3(0.16,0.31,0.50);\n' +
+        '  vec3 col = mix(deep, lit, band*0.85 + 0.15);\n' +
         '  float f = fbm(vP*vec2(2.3,4.0) - flow*2.2);\n' +
-        '  float caps = smoothstep(0.66,0.80,f);\n' +
-        '  // SIGNATURE: a bright reflection streak running toward the viewer\n' +
-        '  float streakX = sin(vP.y*0.35 + 0.6)*2.2 + sin(vP.y*0.9)*0.8;\n' +
-        '  float streak = smoothstep(7.5, 0.0, abs(vP.x - streakX));\n' +
-        '  vec3 sunCol = mix(uSun, vec3(1.0,0.88,0.62), 0.35);\n' +
-        '  col = mix(col, sunCol, streak*0.85);\n' +
-        '  // foam caps — whiter, and hot inside the streak\n' +
-        '  col = mix(col, mix(vec3(0.82,0.87,0.92), sunCol, streak), caps*0.85);\n' +
+        '  float caps = smoothstep(0.60,0.82,f);\n' +
+        '  // SIGNATURE: a defined reflection streak running toward the viewer\n' +
+        '  float streakX = sin(vP.y*0.30 + 0.6)*2.4 + sin(vP.y*0.85)*0.9;\n' +
+        '  float streak = smoothstep(5.5, 0.0, abs(vP.x - streakX));\n' +
+        '  vec3 sunCol = mix(uSun, vec3(1.0,0.90,0.66), 0.35);\n' +
+        '  col = mix(col, sunCol, streak*0.82);\n' +
+        '  // foam caps — brighter only inside the reflection\n' +
+        '  col = mix(col, mix(vec3(0.80,0.85,0.92), sunCol, 0.5), caps*(0.2 + 0.5*streak));\n' +
         '  // shimmering specular along the streak\n' +
-        '  float glint = pow(max(0.0, sin(vP.x*2.5 + vP.y*1.6 - uTime*5.0)*0.5+0.5), 6.0);\n' +
-        '  col += sunCol * glint * streak * 0.7;\n' +
+        '  float glint = pow(max(0.0, sin(vP.x*2.2 + vP.y*1.5 - uTime*5.0)*0.5+0.5), 6.0);\n' +
+        '  col += sunCol * glint * streak * 0.55;\n' +
         '  gl_FragColor = vec4(col, 1.0);\n' +
         '  #include <fog_fragment>\n' +
         '}',
@@ -326,8 +323,8 @@
     return mesh;
   }
   // Near bank (player side) — cool wet gravel; Far bank (enemies) — sandstone shelves.
-  bank(6.5, 6, COL.rockShadow, 0.0);
-  bank(-11, 12, COL.sand, 0.2);
+  bank(7.8, 2.6, COL.rockShadow, 0.0);   // just the near water's edge
+  bank(-12, 12, COL.sand, 0.2);
 
   // Far-bank elevated shelves (give gunslingers different heights)
   function shelf(x, z, w, d, h, color) {
@@ -335,9 +332,10 @@
     const m = new THREE.Mesh(geo, toon(color, { flatShading: true }));
     m.position.set(x, h / 2, z); ink(m, 0.0035); world.add(m); return m;
   }
-  shelf(-14, -13, 12, 6, 1.6, COL.sand);
-  shelf(9, -15, 14, 7, 2.6, COL.rockMid);
-  shelf(-2, -18, 10, 6, 3.6, COL.sand);
+  // Low far-bank rises the outlaws stand on — NOT tall blocks (the walls are the height).
+  shelf(-15, -13, 14, 7, 0.8, COL.sand);
+  shelf(10, -15, 16, 8, 1.3, COL.rockMid);
+  shelf(1, -18, 13, 7, 1.0, COL.sand);
 
   // Scatter cover rocks along both banks + in the river.
   const riverRocks = [];
@@ -399,7 +397,7 @@
     side.position.set(2.6, -0.2, 0.6); grp.add(side);
     const small = makeRock(1.4, toon(COL.rockWet, { flatShading: true }), { squashY: 0.7, ink: 0.004 });
     small.position.set(-3.0, -0.4, 0.7); grp.add(small);
-    grp.position.set(-1.4, -2.0, 5.9);   // just in front of / below the camera, offset left
+    grp.position.set(-2.4, -1.7, 6.6);   // foreground cover lip, bottom-left
     scene.add(grp);
     window.__boulder = main;
   })();
@@ -789,12 +787,14 @@
   /* =========================================================================
      INPUT  (aim / fire / reload) + pointer-lock-free steer fallback
      ========================================================================= */
-  const player = { yaw: 0, pitch: -0.25, locked: false, lockBlocked: false, steer: new THREE.Vector2(), lookVel: new THREE.Vector2() };
+  const SHOT = location.search.indexOf('shot') >= 0;   // freeze look at authored defaults for screenshots
+  const player = { yaw: 0, pitch: -0.155, locked: false, lockBlocked: false, steer: new THREE.Vector2(), lookVel: new THREE.Vector2() };
   const YAW_LIMIT = 0.72, PITCH_LO = -0.34, PITCH_HI = 0.42;   // you're pinned in cover
   let ammo = 6, reloading = false, running = false;
   let nerve = 1, shake = 0;
 
   function onMove(e) {
+    if (SHOT) return;
     if (player.locked) {
       const s = 0.0022;
       player.yaw = clamp(player.yaw - e.movementX * s, -YAW_LIMIT, YAW_LIMIT);
@@ -821,7 +821,7 @@
   document.addEventListener('keyup', (e) => { if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') player.steady = false; });
 
   function requestLock() {
-    if (player.lockBlocked) return;
+    if (SHOT || player.lockBlocked) return;
     if (!renderer.domElement.requestPointerLock) { steerMode(); return; }
     try { const p = renderer.domElement.requestPointerLock(); if (p && p.catch) p.catch(steerMode); } catch (_) { steerMode(); return; }
     setTimeout(() => { if (!player.locked && !player.lockBlocked) steerMode(); }, 450);
@@ -894,7 +894,7 @@
     riverUniforms.uTime.value = clock;
 
     // steer look
-    if (player.lockBlocked && (player.steer.x || player.steer.y)) {
+    if (!SHOT && player.lockBlocked && (player.steer.x || player.steer.y)) {
       player.yaw = clamp(player.yaw - player.steer.x * 1.4 * dt, -YAW_LIMIT, YAW_LIMIT);
       player.pitch = clamp(player.pitch - player.steer.y * 1.0 * dt, PITCH_LO, PITCH_HI);
       player.lookVel.set(player.steer.x * 40, player.steer.y * 40);
