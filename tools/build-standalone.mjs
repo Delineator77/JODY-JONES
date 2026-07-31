@@ -24,3 +24,13 @@ inlineScript('game.js');
 mkdirSync(path.join(root, 'dist'), { recursive: true });
 writeFileSync(path.join(root, 'dist/gauntlet.html'), html);
 console.log('WROTE dist/gauntlet.html  (' + (html.length / 1024).toFixed(0) + ' KB)');
+
+// Artifact-flavored variant: inner content only (no doctype/html/head/body),
+// since an embedding host wraps it in its own document skeleton. The steer
+// fallback in game.js keeps it playable where the host iframe blocks pointer lock.
+const s = html.indexOf('<style>');
+const e = html.indexOf('</body>');
+if (s < 0 || e < 0) throw new Error('could not find <style>/</body> markers');
+const inner = html.slice(s, e).replace('</style>\n</head>\n<body>', '</style>');
+writeFileSync(path.join(root, 'dist/gauntlet.artifact.html'), inner);
+console.log('WROTE dist/gauntlet.artifact.html  (' + (inner.length / 1024).toFixed(0) + ' KB)');
