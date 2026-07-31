@@ -11,3 +11,6 @@ tools/webgl_test.html
 
 # Transient scratch scripts created by critic subagents
 tools/_*.mjs
+
+# Generated single-file build (rebuilt at release via tools/build-standalone.mjs)
+dist/
