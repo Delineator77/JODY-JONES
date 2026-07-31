@@ -59,6 +59,9 @@ for (const a of actions) {
     logs.push('[STATE] ' + JSON.stringify(s));
   } else if (a === 'aim') {
     await page.evaluate(() => window.__GAUNTLET && window.__GAUNTLET.aimNearest());
+  } else if (a.startsWith('ahead')) {
+    const kind = a.slice(5) || 'drone';
+    await page.evaluate((k) => window.__GAUNTLET && window.__GAUNTLET.spawnAhead(k, 6.5), kind);
   } else if (a.startsWith('pitch')) {
     const p = parseFloat(a.slice(5) || '0');
     await page.evaluate((pp) => window.__GAUNTLET && window.__GAUNTLET.setPitch(pp), p);
@@ -79,7 +82,10 @@ for (const a of actions) {
 }
 
 await page.waitForTimeout(waitMs);
-await page.screenshot({ path: out });
+// ensure at least one fresh frame has been composited before capture
+await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+// Software-GL bloom frames under load can exceed the default 30s; be generous & freeze anim.
+await page.screenshot({ path: out, timeout: 120000, animations: 'disabled' });
 await browser.close();
 
 console.log('WROTE ' + out);
