@@ -16,7 +16,15 @@
   };
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
   const lerp = (a, b, t) => a + (b - a) * t;
-  const rnd = (a, b) => a + Math.random() * (b - a);
+  // Seeded RNG so the canyon is a FIXED, art-directed layout (not a new random one per load).
+  let _seed = 1337 >>> 0;
+  function srand() {
+    _seed = (_seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(_seed ^ (_seed >>> 15), 1 | _seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+  const rnd = (a, b) => a + srand() * (b - a);
   const rint = (a, b) => Math.floor(rnd(a, b + 1));
 
   /* ----- palette — locked to the CCC art bible (docs/ART_BIBLE.md) --------- */
@@ -41,8 +49,10 @@
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
   renderer.setSize(innerWidth, innerHeight);
-  renderer.outputEncoding = THREE.sRGBEncoding;
-  renderer.toneMapping = THREE.NoToneMapping;   // flat, authored cel colors — no filmic desaturation
+  // Flat graphic color: no sRGB output curve + no tonemapping => authored hex renders as-is.
+  // (This build predates ColorManagement, so sRGB output would lift/desaturate the flats.)
+  renderer.outputEncoding = THREE.LinearEncoding;
+  renderer.toneMapping = THREE.NoToneMapping;
   dom.stage.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -50,7 +60,7 @@
   scene.fog = new THREE.FogExp2(0x1a2740, 0.006);   // light canyon haze — never washes the hero wall
 
   const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.05, 900);
-  const CAM_BASE = new THREE.Vector3(0, 1.55, 7.2);   // crouched behind the boulder
+  const CAM_BASE = new THREE.Vector3(0, 1.45, 7.2);   // crouched behind the boulder
   camera.position.copy(CAM_BASE);
 
   const composer = new THREE.EffectComposer(renderer);
@@ -165,61 +175,58 @@
   /* =========================================================================
      CANYON WALLS  — enormous, vertex-colored indigo→amber, narrow sky
      ========================================================================= */
-  function cliffColorAt(h01, warp) {
-    // h01: 0 at canyon floor, 1 at the visible top.
-    // Navy shadow low → burnt-vermillion sunlit faces → amber/ivory blazing tops.
+  const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+  // Canyon wall color as a function of absolute world height + how sunlit the column is.
+  // Navy shadow at the floor → burnt-vermillion sunlit faces → amber/ivory blazing tops.
+  function cliffColor(worldY, lit) {
+    const h = clamp(worldY / 74, 0, 1.15);
     const c = new THREE.Color(COL.indigo);
-    // vermillion band rises through the middle of the wall
-    const verm = clamp((h01 - (0.08 + warp * 0.08)) / 0.34, 0, 1);
-    c.lerp(new THREE.Color(COL.vermillion), verm * verm * (3 - 2 * verm));
-    // amber/ivory sunline near the top
-    const sunL = clamp((h01 - (0.60 + warp * 0.10)) / 0.24, 0, 1);
-    const s = sunL * sunL * (3 - 2 * sunL);
-    const cHi = new THREE.Color(COL.amber).lerp(new THREE.Color(COL.ivory), s * 0.55);
-    return c.lerp(cHi, s);
+    c.lerp(new THREE.Color(COL.vermillion), smoothstep(0.04, 0.50, h));
+    c.lerp(new THREE.Color(COL.amber), smoothstep(0.58, 0.90, h) * 0.9);
+    c.lerp(new THREE.Color(COL.ivory), smoothstep(0.86, 1.12, h) * 0.55);
+    // recessed (shadow) columns stay cool and dark; buttresses catch the warm light
+    return new THREE.Color(COL.rockShadow).lerp(c, 0.30 + 0.70 * lit);
   }
-  function buildCliff(width, height, segW, segH, origin, dir, faceSign, jitterAmt) {
-    // A tall folded wall. Local grid in (u across, v up); pushed out along faceSign in z.
-    const g = new THREE.PlaneGeometry(width, height, segW, segH);
-    const p = g.attributes.position;
-    const colors = new Float32Array(p.count * 3);
-    const col = new THREE.Color();
-    // precompute a per-column depth profile for jaggedness
-    for (let i = 0; i < p.count; i++) {
-      const lx = p.getX(i), ly = p.getY(i);
-      const u = (lx / width) + 0.5;      // 0..1 across
-      const v = (ly / height) + 0.5;     // 0..1 up
-      const warp = Math.sin(u * 9.0 + faceSign * 2.0) * 0.5 + Math.sin(u * 23.0) * 0.2;
-      // jagged depth: columns of protruding buttresses (catch sun) and recesses (shadow)
-      const depth = (Math.sin(u * 6.0 + 1.3) * 0.5 + Math.sin(u * 15.0) * 0.28 + Math.sin(v * 5.0) * 0.25) * jitterAmt;
-      p.setZ(i, depth);
-      // faceted lit/shadow split: protrusions read warm vermillion, recesses navy shadow
-      const lit = clamp((depth + jitterAmt * 0.25) / (jitterAmt * 0.9), 0, 1);
-      const litB = lit < 0.4 ? 0.15 : (lit < 0.72 ? 0.6 : 1.0);   // hard cel bands, not a smooth ramp
-      const vq = Math.floor(v * 7) / 7;                            // horizontal strata bands
-      col.copy(new THREE.Color(COL.rockShadow)).lerp(cliffColorAt(vq, warp), 0.28 + 0.72 * litB);
-      col.multiplyScalar(0.9 + 0.1 * Math.sin(v * 46 + Math.sin(u * 8) * 2)); // fine strata lines
-      colors[i * 3] = col.r; colors[i * 3 + 1] = col.g; colors[i * 3 + 2] = col.b;
+  // A canyon wall built from faceted vertical COLUMNS (columnar sandstone) — each a flat
+  // color mass with hard edges to its neighbours, jagged tops biting into the sky strip.
+  function buildCliff(width, height, cols, origin, dir, depthAmt, opts) {
+    opts = opts || {};
+    const group = new THREE.Group();
+    const colW = width / cols;
+    for (let i = 0; i < cols; i++) {
+      const cx = -width / 2 + (i + 0.5) * colW;
+      const w = colW * rnd(0.9, 1.14);
+      const prof = opts.profile ? opts.profile(i / (cols - 1)) : 1;
+      const h = height * prof * (0.6 + 0.4 * (0.5 + 0.5 * Math.sin(i * 1.7) + 0.28 * Math.sin(i * 0.6 + 1.1)));
+      const d = rnd(0.9, depthAmt);
+      const lit = clamp(0.5 + 0.5 * Math.sin(i * 0.7 + 1.0) + 0.22 * Math.sin(i * 2.9), 0, 1);
+      const geo = new THREE.BoxGeometry(w, h, d, 1, 4, 1);
+      const pos = geo.attributes.position, colors = new Float32Array(pos.count * 3), c = new THREE.Color();
+      for (let k = 0; k < pos.count; k++) {
+        const wy = origin.y + h / 2 + pos.getY(k);   // absolute world height of this vertex
+        c.copy(cliffColor(wy, lit));
+        colors[k * 3] = c.r; colors[k * 3 + 1] = c.g; colors[k * 3 + 2] = c.b;
+      }
+      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, fog: true }));
+      m.position.set(cx, h / 2, rnd(-0.5, 0.5) * depthAmt);
+      m.frustumCulled = false;
+      group.add(m);
     }
-    p.needsUpdate = true; g.computeVertexNormals();
-    g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    const mat = new THREE.MeshBasicMaterial({ vertexColors: true, fog: true });
-    g.computeBoundingSphere();
-    const mesh = new THREE.Mesh(g, mat);
-    mesh.frustumCulled = false;   // vertices displaced post-construction
-    mesh.position.copy(origin);
-    mesh.rotation.y = dir;
-    return mesh;
+    group.position.copy(origin); group.rotation.y = dir;
+    return group;
   }
+  const FLOOR = -2.4;   // canyon floor / waterline height
   const cliffs = new THREE.Group();
-  // Far wall (behind the enemies) — THE towering face the player stares up.
-  // Far wall behind the enemies — capped in height so a warm sky strip reads above it.
-  cliffs.add(buildCliff(260, 78, 64, 26, new THREE.Vector3(0, 9, -34), 0, 1, 7));
-  // Tall walls framing left (upstream) and right (downstream) — these tower and recede.
-  cliffs.add(buildCliff(150, 200, 34, 40, new THREE.Vector3(-34, 70, -10), Math.PI / 2 + 0.16, 1, 9));
-  cliffs.add(buildCliff(150, 200, 34, 40, new THREE.Vector3(34, 70, -10), -Math.PI / 2 - 0.16, 1, 9));
-  // Near-side overhang tucked at the very top of frame for enclosure.
-  cliffs.add(buildCliff(200, 120, 30, 18, new THREE.Vector3(0, 96, 42), Math.PI, -1, 6));
+  // Far wall behind the enemies — kept low so a warm sky strip reads above its jagged top.
+  cliffs.add(buildCliff(340, 34, 54, new THREE.Vector3(0, FLOOR, -36), 0, 5));
+  // Walls framing left (upstream) and right (downstream) — wide + moderate height so they
+  // frame the edges and recede without swallowing the river + far bank.
+  cliffs.add(buildCliff(220, 72, 22, new THREE.Vector3(-70, FLOOR, -26), Math.PI / 2 + 0.10, 10));
+  cliffs.add(buildCliff(220, 72, 22, new THREE.Vector3(70, FLOOR, -26), -Math.PI / 2 - 0.10, 10));
+  // A couple of tall buttresses just at the frame edges for the "trapped" scale.
+  cliffs.add(buildCliff(40, 150, 4, new THREE.Vector3(-52, FLOOR, 2), Math.PI / 2, 8));
+  cliffs.add(buildCliff(40, 150, 4, new THREE.Vector3(52, FLOOR, 2), -Math.PI / 2, 8));
   scene.add(cliffs);
 
   /* ----- Sky strip -------------------------------------------------------- */
@@ -359,12 +366,14 @@
   const reeds = [];
   (function makeReeds() {
     const rmat = toonSoft(COL.reed, { side: THREE.DoubleSide, transparent: true });
-    for (let i = 0; i < 46; i++) {
-      const h = rnd(0.5, 1.3);
-      const g = new THREE.PlaneGeometry(0.06, h, 1, 3);
+    // small backlit grass clumps along the near bank edges — never blocking the view
+    for (let i = 0; i < 26; i++) {
+      const h = rnd(0.28, 0.6);
+      const g = new THREE.PlaneGeometry(0.05, h, 1, 3);
       g.translate(0, h / 2, 0);
       const m = new THREE.Mesh(g, rmat);
-      m.position.set(rnd(-20, 20), 0.1, rnd(3, 6.2));
+      const side = i % 2 ? 1 : -1;
+      m.position.set(side * rnd(3.5, 16), 0.05, rnd(2.6, 4.4));
       m.rotation.y = rnd(0, Math.PI);
       m.userData.h = h; m.userData.phase = rnd(0, 6.28);
       world.add(m); reeds.push(m);
@@ -390,7 +399,7 @@
     side.position.set(2.6, -0.2, 0.6); grp.add(side);
     const small = makeRock(1.4, toon(COL.rockWet, { flatShading: true }), { squashY: 0.7, ink: 0.004 });
     small.position.set(-3.0, -0.4, 0.7); grp.add(small);
-    grp.position.set(0, -1.7, 5.6);   // just in front of / below the camera
+    grp.position.set(-1.4, -2.0, 5.9);   // just in front of / below the camera, offset left
     scene.add(grp);
     window.__boulder = main;
   })();
@@ -432,9 +441,9 @@
     flash.position.set(0, 0.02, -0.72); grp.add(flash);
     const flashPt = new THREE.PointLight(0xffb060, 0, 8); flashPt.position.set(0, 0.2, -1); grp.add(flashPt);
 
-    grp.position.set(0.32, -0.46, -0.72);
-    grp.rotation.y = -0.13; grp.rotation.z = 0.04;
-    grp.scale.setScalar(0.92);
+    grp.position.set(0.30, -0.32, -0.62);
+    grp.rotation.y = -0.13; grp.rotation.z = 0.04; grp.rotation.x = 0.12;
+    grp.scale.setScalar(0.9);
     camera.add(grp); scene.add(camera);
 
     let recoil = 0, flashT = 0, sway = new THREE.Vector2(), bob = 0;
@@ -780,7 +789,7 @@
   /* =========================================================================
      INPUT  (aim / fire / reload) + pointer-lock-free steer fallback
      ========================================================================= */
-  const player = { yaw: 0, pitch: -0.17, locked: false, lockBlocked: false, steer: new THREE.Vector2(), lookVel: new THREE.Vector2() };
+  const player = { yaw: 0, pitch: -0.25, locked: false, lockBlocked: false, steer: new THREE.Vector2(), lookVel: new THREE.Vector2() };
   const YAW_LIMIT = 0.72, PITCH_LO = -0.34, PITCH_HI = 0.42;   // you're pinned in cover
   let ammo = 6, reloading = false, running = false;
   let nerve = 1, shake = 0;
