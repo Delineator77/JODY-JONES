@@ -1,0 +1,247 @@
+<style>
+  :root{
+    --bg:#06090f; --bg2:#0a1019; --panel:#0e1524; --panel2:#111a2b;
+    --line:rgba(120,165,205,.16); --line2:rgba(120,165,205,.28);
+    --text:#d6e4ee; --muted:#8299ad; --dim:#5f7387;
+    --cyan:#37e6ff; --mag:#ff2d95; --amber:#ffb020; --green:#43ff9e;
+    --shadow:0 18px 50px rgba(0,0,0,.55);
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:"Segoe UI",system-ui,-apple-system,Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:
+      radial-gradient(1200px 700px at 70% -10%, rgba(55,230,255,.10), transparent 60%),
+      radial-gradient(1000px 700px at 10% 10%, rgba(255,45,149,.08), transparent 55%),
+      var(--bg);
+    color:var(--text); font-family:var(--sans); line-height:1.6;
+    -webkit-font-smoothing:antialiased; overflow-x:hidden;}
+  .wrap{max-width:1120px; margin:0 auto; padding:0 22px}
+  a{color:var(--cyan); text-decoration:none} a:hover{text-decoration:underline}
+
+  .eyebrow{font-family:var(--mono); font-size:12px; letter-spacing:.32em; text-transform:uppercase; color:var(--cyan);}
+  h2{font-size:clamp(26px,4.4vw,40px); letter-spacing:.02em; margin:.2em 0 .1em; text-wrap:balance; font-weight:800}
+  h3{font-size:19px; letter-spacing:.01em; margin:0 0 6px; font-weight:700}
+  p{color:var(--muted); max-width:66ch}
+  .lead{font-size:clamp(16px,2vw,19px); color:#b6cadb}
+  .kicker{font-family:var(--mono); font-size:12px; letter-spacing:.28em; text-transform:uppercase; color:var(--dim)}
+
+  section{padding:64px 0; border-top:1px solid var(--line)}
+  .reveal{opacity:0; transform:translateY(16px); animation:rise .7s cubic-bezier(.2,.7,.2,1) forwards}
+  @keyframes rise{to{opacity:1; transform:none}}
+  @media (prefers-reduced-motion:reduce){.reveal{animation:none; opacity:1; transform:none}}
+
+  /* HERO */
+  .hero{padding:78px 0 56px; text-align:center; position:relative}
+  .title{font-size:clamp(58px,15vw,150px); font-weight:900; letter-spacing:.06em; line-height:.9; margin:14px 0 6px;
+    background:linear-gradient(100deg,var(--cyan),#8db6ff 42%,var(--mag));
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    filter:drop-shadow(0 0 30px rgba(55,230,255,.18));}
+  .subtitle{font-family:var(--mono); font-size:13px; letter-spacing:.42em; text-transform:uppercase; color:#9fd6e6; margin-bottom:26px}
+  .hero p{margin:0 auto}
+  .frame{border:1px solid var(--line2); border-radius:8px; overflow:hidden; box-shadow:var(--shadow); background:#000; position:relative}
+  .frame img{display:block; width:100%; height:auto}
+  .heroframe{margin:34px auto 0; max-width:1000px}
+  .heroframe::after{content:""; position:absolute; inset:0; box-shadow:inset 0 0 90px rgba(0,0,0,.5), inset 0 0 2px rgba(55,230,255,.4); pointer-events:none; border-radius:8px}
+
+  .chips{display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin:30px auto 0; max-width:820px}
+  .chip{font-family:var(--mono); font-size:12px; letter-spacing:.06em; color:#cfe6f2; padding:8px 14px; border:1px solid var(--line2);
+    border-radius:999px; background:rgba(14,21,36,.7); display:flex; gap:8px; align-items:center}
+  .chip b{color:var(--cyan); font-weight:700}
+  .dotc{width:7px;height:7px;border-radius:50%;background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
+  .dotm{background:var(--mag);box-shadow:0 0 8px var(--mag)}
+  .dota{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+  .dotg{background:var(--green);box-shadow:0 0 8px var(--green)}
+
+  /* METHOD steps */
+  .steps{display:grid; grid-template-columns:repeat(2,1fr); gap:16px; margin-top:30px}
+  .step{background:linear-gradient(180deg,var(--panel),var(--bg2)); border:1px solid var(--line); border-radius:10px; padding:20px 22px; position:relative}
+  .step .n{font-family:var(--mono); font-size:12px; letter-spacing:.2em; color:var(--cyan); opacity:.9}
+  .step h3{margin-top:8px}
+  .step p{font-size:14.5px; margin:0}
+  .step.em{border-color:rgba(255,45,149,.35)}
+  .step.em .n{color:var(--mag)}
+
+  /* COMPARE */
+  .compare{display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-top:26px}
+  .cap{display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:11px; letter-spacing:.22em; text-transform:uppercase; margin:10px 2px 0; color:var(--muted)}
+  .tag{font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; padding:3px 9px; border-radius:5px; border:1px solid var(--line2)}
+  .tag.before{color:var(--dim)} .tag.after{color:var(--green); border-color:rgba(67,255,158,.4)}
+  .compare p{font-size:13.5px; margin:6px 2px 0}
+
+  /* ENEMY cards */
+  .enemies{display:grid; grid-template-columns:repeat(3,1fr); gap:18px; margin-top:26px}
+  .ecard{background:var(--panel); border:1px solid var(--line); border-radius:10px; overflow:hidden}
+  .ecard .frame{border:none; border-radius:0; box-shadow:none}
+  .ecard .body{padding:16px 18px 18px}
+  .ecard .name{display:flex; align-items:center; gap:9px; font-weight:800; letter-spacing:.04em; font-size:16px}
+  .ecard .role{font-family:var(--mono); font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted); margin:2px 0 8px}
+  .ecard p{font-size:13.5px; margin:0}
+
+  /* PLAY */
+  .play{display:grid; grid-template-columns:1.1fr .9fr; gap:24px; align-items:start; margin-top:24px}
+  .keys{display:grid; grid-template-columns:auto 1fr; gap:10px 16px; font-size:14px; margin-top:6px}
+  .keys kbd{font-family:var(--mono); font-size:12px; color:#04121a; background:linear-gradient(180deg,#cfeff8,#8fd6e6); padding:3px 9px; border-radius:5px; font-weight:700; justify-self:start; box-shadow:0 1px 0 rgba(0,0,0,.4)}
+  .keys span{color:var(--muted); align-self:center}
+  .runbox{background:#060a12; border:1px solid var(--line); border-radius:10px; padding:16px 18px; font-family:var(--mono); font-size:13px; color:#bcd3e0}
+  .runbox .c{color:var(--green)} .runbox .cm{color:var(--dim)}
+  .note{font-size:13px; color:var(--muted); margin-top:12px}
+
+  footer{border-top:1px solid var(--line); padding:34px 0 60px; color:var(--dim); font-size:13px}
+  footer a{color:var(--muted)}
+  .rule{color:var(--dim)}
+
+  @media (max-width:760px){
+    .steps,.compare,.enemies,.play{grid-template-columns:1fr}
+    section{padding:48px 0}
+  }
+</style>
+
+<div class="hero">
+  <div class="wrap reveal">
+    <div class="eyebrow">Built with the Gauntlet Loop</div>
+    <div class="title">GAUNTLET</div>
+    <div class="subtitle">Neon Arena Protocol</div>
+    <p class="lead">A first-person shooter that runs in a browser — where <b style="color:#cfe6f2">every mesh,
+      texture, sound and effect is generated in code</b>. Not one external asset. Built by an AI agent
+      that split the work, judged itself against a hard bar, and refused to stop at "pretty good."</p>
+    <div class="frame heroframe"><img src="{{HERO}}" alt="GAUNTLET combat — impact sparks bursting from a hit enemy in the neon arena" /></div>
+    <div class="chips">
+      <span class="chip"><i class="dotc"></i> <b>0</b> external assets</span>
+      <span class="chip"><i class="dotm"></i> <b>3</b> enemy archetypes</span>
+      <span class="chip"><i class="dota"></i> WebGL + bloom</span>
+      <span class="chip"><i class="dotg"></i> procedural WebAudio</span>
+      <span class="chip"><i class="dotc"></i> single self-contained file</span>
+    </div>
+  </div>
+</div>
+
+<section>
+  <div class="wrap reveal">
+    <div class="eyebrow">The Method</div>
+    <h2>What is a Gauntlet Loop?</h2>
+    <p>A prompting method by <a href="https://somethingbig.ai/gauntlet-loop">Matt Shumer</a>: give an agent a
+      bar it can't talk its way around, let it split the work, and never let the builder grade itself. GAUNTLET
+      was built exactly this way — the steps below are the loop, not a summary of it.</p>
+    <div class="steps">
+      <div class="step"><div class="n">01 — GOAL</div><h3>The destination, not the route</h3>
+        <p>The goal: a modern, AAA-quality first-person shooter in Three.js, zero external assets. No architecture prescribed — the agent chose how.</p></div>
+      <div class="step"><div class="n">02 — THE BAR</div><h3>A bar it can't argue with</h3>
+        <p>A concrete AAA arena-shooter rubric (Call of Duty / DOOM / Destiny). The reference wins by default; "pretty good for AI" is not a passing grade.</p></div>
+      <div class="step"><div class="n">03 — SPLIT</div><h3>Smallest pieces that can be judged</h3>
+        <p>Lighting, environment art, enemy design, weapon &amp; gunplay, HUD &amp; juice — each improved and judged on its own.</p></div>
+      <div class="step em"><div class="n">04 — BLIND CRITICS</div><h3>Never let the builder grade itself</h3>
+        <p>Each piece is judged by a <b style="color:#ffbfda">fresh, blind critic</b> in its own clean context that <b style="color:#ffbfda">renders the actual pixels itself</b> and reports the single biggest gap — no builder's rationale allowed.</p></div>
+      <div class="step"><div class="n">05 — LOOP</div><h3>Keep going</h3>
+        <p>Builder fixes the biggest gap → re-render → critic again → repeat. Two full waves of five-then-three blind critics ran on GAUNTLET.</p></div>
+      <div class="step"><div class="n">06 — STOP, DON'T FINISH</div><h3>The bar stays out of reach</h3>
+        <p>You stop the run; it never "finishes." With a high enough bar there is always one more gap to close.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap reveal">
+    <div class="eyebrow">The Gauntlet in Action</div>
+    <h2>What the blind critics changed</h2>
+    <p>Each critic rendered the game, looked at the real pixels, and named the biggest reason a real AAA shooter
+      would beat it. Two examples of before → after.</p>
+
+    <div class="kicker" style="margin-top:34px">Atmosphere &amp; environment</div>
+    <div class="compare">
+      <div>
+        <div class="frame"><img src="{{BASE_SCENE}}" alt="Baseline scene — dark, empty, flat"/></div>
+        <div class="cap"><span class="tag before">Baseline</span> a black-crushed void</div>
+        <p>Every surface crushed to pure black; empty sky up top; cover read as featureless blobs.</p>
+      </div>
+      <div>
+        <div class="frame"><img src="{{R2_SCENE}}" alt="After — atmospheric arena with structure, haze and neon"/></div>
+        <div class="cap"><span class="tag after">After</span> a built, lit space</div>
+        <p>Opposing fill light, luminous haze, an overhead truss, a distant skyline, glowing edge-lit cover, floating dust.</p>
+      </div>
+    </div>
+
+    <div class="kicker" style="margin-top:40px">Enemy readability</div>
+    <div class="compare">
+      <div>
+        <div class="frame"><img src="{{BASE_ENEMY}}" alt="Baseline enemy — a tiny dark cube"/></div>
+        <div class="cap"><span class="tag before">Baseline</span> a floating spark</div>
+        <p>The enemy's body was the same color as the crates — you tracked a pinpoint glow, not a creature.</p>
+      </div>
+      <div>
+        <div class="frame"><img src="{{DRONE}}" alt="After — a menacing rim-lit drone"/></div>
+        <div class="cap"><span class="tag after">After</span> a readable threat</div>
+        <p>A glowing rim outline, lifted albedo, a menacing hunched silhouette, animated legs and a menace telegraph.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap reveal">
+    <div class="eyebrow">Bestiary</div>
+    <h2>Three ways to die</h2>
+    <p>Round 1 made every enemy glow. Round 2's critic caught that they all glowed <i>the same</i> — so the
+      archetypes were redesigned to differ by silhouette, not just hue.</p>
+    <div class="enemies">
+      <div class="ecard">
+        <div class="frame"><img src="{{DRONE}}" alt="Drone enemy"/></div>
+        <div class="body"><div class="name"><i class="dota" style="background:#ff5a2a;box-shadow:0 0 8px #ff5a2a"></i> Drone</div>
+          <div class="role">Fast · fragile · swarms</div>
+          <p>A lean, forward-hunched carapace that closes the distance and lunges. Cheap alone, lethal in numbers.</p></div>
+      </div>
+      <div class="ecard">
+        <div class="frame"><img src="{{SPITTER}}" alt="Spitter enemy"/></div>
+        <div class="body"><div class="name"><i class="dotg" style="background:#39ffb0;box-shadow:0 0 8px #39ffb0"></i> Spitter</div>
+          <div class="role">Ranged · keeps its distance</div>
+          <p>A bulbous acid gland marks it at a glance. Lobs glowing orbs from range while you're busy up close.</p></div>
+      </div>
+      <div class="ecard">
+        <div class="frame"><img src="{{BRUTE}}" alt="Brute enemy"/></div>
+        <div class="body"><div class="name"><i class="dotm" style="background:#c23bff;box-shadow:0 0 8px #c23bff"></i> Brute</div>
+          <div class="role">Slow · armored · heavy</div>
+          <p>Broad armored shoulder plates and a heavy low stance. Soaks damage and hits like a truck.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap reveal">
+    <div class="eyebrow">Play It</div>
+    <h2>Survive the arena</h2>
+    <div class="play">
+      <div>
+        <p>Escalating waves of hostiles in a neon arena. Clearing a wave refills your magazine and patches your
+          armor; headshots on the glowing core deal double. It's one self-contained web page — no build step.</p>
+        <div class="keys">
+          <kbd>WASD</kbd><span>move</span>
+          <kbd>Mouse</kbd><span>aim</span>
+          <kbd>Click</kbd><span>fire</span>
+          <kbd>R</kbd><span>reload</span>
+          <kbd>Shift</kbd><span>sprint</span>
+          <kbd>Space</kbd><span>jump</span>
+          <kbd>RMB</kbd><span>aim down sights</span>
+        </div>
+      </div>
+      <div>
+        <div class="runbox">
+          <div class="cm"># from the repo root</div>
+          <div><span class="c">python3</span> -m http.server 8080</div>
+          <div class="cm"># then open</div>
+          <div><span class="c">http://localhost:8080</span></div>
+        </div>
+        <p class="note">The full source lives on the <b style="color:#cfe6f2">claude/fps-gauntlet-loop</b> branch —
+          <span class="rule">index.html + game.js</span>, Three.js vendored, plus the blind-critic screenshot harness and the round-by-round loop log.</p>
+      </div>
+    </div>
+    <div class="frame" style="margin-top:26px; max-width:900px"><img src="{{MENU}}" alt="GAUNTLET title screen"/></div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div>Method: <a href="https://somethingbig.ai/gauntlet-loop">How to Run a Gauntlet Loop</a> by Matt Shumer ·
+      GAUNTLET built with Claude Code using the split → build → blind-critic → repeat cycle.</div>
+    <div style="margin-top:6px" class="rule">Every texture, mesh, sound and effect generated in code. No external assets.</div>
+  </div>
+</footer>
