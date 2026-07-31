@@ -137,7 +137,7 @@
   // Post: bloom for that neon AAA glow
   const composer = new THREE.EffectComposer(renderer);
   composer.addPass(new THREE.RenderPass(scene, camera));
-  const bloom = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.82, 0.62, 0.62);
+  const bloom = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.66, 0.6, 0.66);
   composer.addPass(bloom);
 
   // Finishing grade: radial vignette + cool shadow tint + gentle saturation lift.
@@ -219,7 +219,19 @@
     x.fillStyle = g; x.fillRect(0, 0, s, s);
     return new THREE.CanvasTexture(c);
   }
-  const TEX = { floor: floorTexture(), floorRough: floorRough(), wall: wallTexture(), dot: softDot() };
+  function detailBump() {
+    const s = 256, c = makeCanvas(s), x = c.getContext('2d');
+    x.fillStyle = '#808080'; x.fillRect(0, 0, s, s);
+    x.strokeStyle = '#3a3a3a'; x.lineWidth = 3;
+    for (let i = 0; i <= s; i += 64) { x.beginPath(); x.moveTo(i, 0); x.lineTo(i, s); x.stroke(); x.beginPath(); x.moveTo(0, i); x.lineTo(s, i); x.stroke(); }
+    x.strokeStyle = '#b4b4b4'; x.lineWidth = 1;
+    for (let i = 32; i <= s; i += 64) { x.beginPath(); x.moveTo(i, 0); x.lineTo(i, s); x.stroke(); }
+    x.fillStyle = '#d4d4d4';
+    for (let i = 10; i < s; i += 64) for (let j = 10; j < s; j += 64) { x.beginPath(); x.arc(i, j, 2.5, 0, TAU); x.fill(); }
+    for (let i = 0; i < 3200; i++) { const v = 88 + Math.floor(Math.random() * 92); x.fillStyle = `rgb(${v},${v},${v})`; x.fillRect(Math.random() * s, Math.random() * s, 1, 1); }
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(3, 3); return t;
+  }
+  const TEX = { floor: floorTexture(), floorRough: floorRough(), wall: wallTexture(), dot: softDot(), bump: detailBump() };
 
   /* =========================================================================
      WORLD
@@ -235,8 +247,9 @@
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(ARENA * 2, ARENA * 2), floorMat);
     floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
 
-    // Perimeter walls
-    const wallMat = new THREE.MeshStandardMaterial({ map: TEX.wall, roughness: 0.7, metalness: 0.5, color: 0xffffff });
+    // Perimeter walls — tiled texture + bump relief so they read as built surfaces.
+    const wallTex = TEX.wall.clone(); wallTex.wrapS = wallTex.wrapT = THREE.RepeatWrapping; wallTex.repeat.set(6, 2.5); wallTex.needsUpdate = true;
+    const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, bumpMap: TEX.bump, bumpScale: 0.02, roughness: 0.66, metalness: 0.5, color: 0xaab4c4 });
     const wallH = 9, th = 1.2;
     const wallDefs = [
       [0, wallH / 2, -ARENA, ARENA * 2, wallH, th], [0, wallH / 2, ARENA, ARENA * 2, wallH, th],
@@ -273,7 +286,7 @@
 
     // Cover — brighter albedo + glowing VERTICAL edge posts so boxes read against the dark,
     // with varied heights/footprints to layer foreground/midground. [cx,cz,w,d,h,trim]
-    const crateMat = new THREE.MeshStandardMaterial({ map: TEX.wall, color: 0x707c90, roughness: 0.5, metalness: 0.5 });
+    const crateMat = new THREE.MeshStandardMaterial({ map: TEX.wall, bumpMap: TEX.bump, bumpScale: 0.02, color: 0x7c8698, roughness: 0.5, metalness: 0.5 });
     const covers = [
       [-8, 6, 3.5, 3.5, 2.4, 0x37e6ff], [9, -4, 3, 3, 3.0, 0xff2d95], [4, 10, 4, 1.7, 1.5, 0xffb020],
       [-11, -9, 2.5, 2.5, 2.8, 0x37e6ff], [12, 8, 2.2, 2.2, 4.4, 0xff2d95], [-4, -12, 5, 1.5, 1.3, 0xffb020],
@@ -293,7 +306,7 @@
 
     // Overhead truss + hanging light panels — caps the empty sky and adds top-down light.
     const beamMat = new THREE.MeshStandardMaterial({ color: 0x161c28, roughness: 0.75, metalness: 0.6 });
-    const panelMat = new THREE.MeshStandardMaterial({ color: 0xcfeaff, emissive: 0xcfeaff, emissiveIntensity: 1.1 });
+    const panelMat = new THREE.MeshStandardMaterial({ color: 0xbfe6ff, emissive: 0xbfe6ff, emissiveIntensity: 1.9 });
     const beamY = 12.5;
     for (let i = -2; i <= 2; i++) {
       const bx = new THREE.Mesh(new THREE.BoxGeometry(ARENA * 2, 0.35, 0.35), beamMat); bx.position.set(0, beamY, i * 12); scene.add(bx);
@@ -323,13 +336,14 @@
     const sigil = new THREE.Group();
     const ring = new THREE.Mesh(new THREE.TorusGeometry(3.2, 0.16, 8, 48), sigilMat); sigil.add(ring);
     const inner = new THREE.Mesh(new THREE.TorusGeometry(1.9, 0.13, 6, 3), sigilMat); inner.rotation.z = Math.PI / 6; sigil.add(inner);
-    sigil.position.set(0, 6, -ARENA + 1.0); scene.add(sigil);
+    // Placed high on a side wall (not dead-center) so it never competes with the reticle.
+    sigil.position.set(ARENA - 1.0, 7.2, -8); sigil.rotation.y = -Math.PI / 2; scene.add(sigil);
     updaters.push((dt, t) => { inner.rotation.z += dt * 0.3; sigilMat.emissiveIntensity = 1.3 + 0.4 * Math.sin(t * 1.5); });
 
-    // Floor-base neon runs (leading lines drawing the eye across the arena).
-    [[0, -ARENA + 0.6, 0, 0x37e6ff], [0, ARENA - 0.6, 0, 0xff2d95], [-ARENA + 0.6, 0, Math.PI / 2, 0xff2d95], [ARENA - 0.6, 0, Math.PI / 2, 0x37e6ff]].forEach(s => {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(ARENA * 2 - 1, 0.07, 0.07), new THREE.MeshStandardMaterial({ color: s[3], emissive: s[3], emissiveIntensity: 2.3 }));
-      m.position.set(s[0], 0.16, s[1]); m.rotation.y = s[2]; scene.add(m);
+    // Floor-hugging neon trim at the wall base (reads as a floor edge, not a floating laser).
+    [[0, -ARENA + 0.5, 0, 0x37e6ff], [0, ARENA - 0.5, 0, 0xff2d95], [-ARENA + 0.5, 0, Math.PI / 2, 0xff2d95], [ARENA - 0.5, 0, Math.PI / 2, 0x37e6ff]].forEach(s => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(ARENA * 2 - 1, 0.03, 0.22), new THREE.MeshStandardMaterial({ color: s[3], emissive: s[3], emissiveIntensity: 2.0 }));
+      m.position.set(s[0], 0.05, s[1]); m.rotation.y = s[2]; scene.add(m);
     });
 
     // Hazard chevrons ringing the center — set dressing + leading lines.
@@ -445,18 +459,18 @@
      ========================================================================= */
   const Tracers = (function () {
     const POOL = 20; const items = [];
-    const geo = new THREE.CylinderGeometry(0.02, 0.02, 1, 5, 1, true);
+    const geo = new THREE.CylinderGeometry(0.035, 0.035, 1, 6, 1, true);
     geo.translate(0, 0.5, 0); geo.rotateX(Math.PI / 2); // now along +Z from origin
-    const mat = new THREE.MeshBasicMaterial({ color: 0x9ff6ff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+    const mat = new THREE.MeshBasicMaterial({ color: 0xbafcff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
     for (let i = 0; i < POOL; i++) { const m = new THREE.Mesh(geo, mat.clone()); m.visible = false; scene.add(m); items.push({ m, life: 0 }); }
     let h = 0;
     const _d = new THREE.Vector3();
     function fire(from, to) {
       const it = items[h]; h = (h + 1) % POOL;
       _d.subVectors(to, from); const len = _d.length();
-      it.m.position.copy(from); it.m.lookAt(to); it.m.scale.set(1, 1, len); it.m.visible = true; it.m.material.opacity = 0.95; it.life = 0.06;
+      it.m.position.copy(from); it.m.lookAt(to); it.m.scale.set(1, 1, len); it.m.visible = true; it.m.material.opacity = 0.95; it.life = 0.11;
     }
-    function update(dt) { for (const it of items) { if (it.life > 0) { it.life -= dt; it.m.material.opacity = Math.max(0, it.life / 0.06) * 0.95; if (it.life <= 0) it.m.visible = false; } } }
+    function update(dt) { for (const it of items) { if (it.life > 0) { it.life -= dt; it.m.material.opacity = Math.max(0, it.life / 0.11) * 0.95; if (it.life <= 0) it.m.visible = false; } } }
     return { fire, update };
   })();
 
@@ -475,7 +489,7 @@
   const Weapon = (function () {
     const group = new THREE.Group();
     // Mid-value gunmetal that actually catches the viewmodel key/rim light.
-    const gunMat = new THREE.MeshStandardMaterial({ color: 0x2b323d, roughness: 0.44, metalness: 0.85 });
+    const gunMat = new THREE.MeshStandardMaterial({ color: 0x2b323d, roughness: 0.52, metalness: 0.8 });
     const polyMat = new THREE.MeshStandardMaterial({ color: 0x1c2129, roughness: 0.55, metalness: 0.3 });
     const accentMat = new THREE.MeshStandardMaterial({ color: 0x37e6ff, emissive: 0x37e6ff, emissiveIntensity: 0.6, roughness: 0.4 });
     const darkMat = new THREE.MeshStandardMaterial({ color: 0x14181f, roughness: 0.5, metalness: 0.7 });
@@ -534,10 +548,10 @@
     const flashMat = new THREE.MeshBasicMaterial({ map: TEX.dot, color: 0xffcf8a, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 });
     const flashCoreMat = new THREE.MeshBasicMaterial({ map: TEX.dot, color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 });
     const flash = new THREE.Group();
-    const fp1 = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 1.0), flashMat); flash.add(fp1);
-    const fp2 = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.3), flashMat); flash.add(fp2);
-    const fp3 = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 1.7), flashMat); flash.add(fp3);
-    const fp0 = new THREE.Mesh(new THREE.PlaneGeometry(0.55, 0.55), flashCoreMat); fp0.position.z = 0.01; flash.add(fp0);
+    const fp1 = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.7), flashMat); flash.add(fp1);
+    const fp2 = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.22), flashMat); flash.add(fp2);
+    const fp3 = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 1.2), flashMat); flash.add(fp3);
+    const fp0 = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.34), flashCoreMat); fp0.position.z = 0.01; flash.add(fp0);
     flash.position.copy(muzzle.position); flash.position.z -= 0.05; group.add(flash);
 
     group.position.set(0.24, -0.24, -0.5);
@@ -547,7 +561,7 @@
 
     // Viewmodel-only light rig (layer 1) so the gun reads as metal without lighting the world.
     group.traverse((o) => { o.layers.set(1); });
-    const vmKey = new THREE.PointLight(0xeaf3ff, 1.6, 5, 2); vmKey.position.set(0.55, 0.4, -0.35); vmKey.layers.set(1); camera.add(vmKey);
+    const vmKey = new THREE.PointLight(0xeaf3ff, 1.2, 5, 2); vmKey.position.set(0.55, 0.4, -0.35); vmKey.layers.set(1); camera.add(vmKey);
     const vmRim = new THREE.PointLight(0x46b6ff, 1.3, 5, 2); vmRim.position.set(-0.6, 0.05, -0.85); vmRim.layers.set(1); camera.add(vmRim);
     const vmFill = new THREE.PointLight(0x30506a, 0.8, 4.5, 2); vmFill.position.set(0.1, -0.5, -0.3); vmFill.layers.set(1); camera.add(vmFill);
     camera.layers.enable(1);
@@ -566,9 +580,11 @@
     function tryFire() {
       if (st.reloading > 0 || st.cooldown > 0 || paused || !running) return false;
       if (st.mag <= 0) { Audio.dryFire(); st.cooldown = 0.18; return false; }
-      st.mag--; st.cooldown = st.fireRate; recoil = Math.min(recoil + 1, 3.4); flashT = 0.09;
-      Audio.shoot(); flash.rotation.z = rand(0, TAU);
-      Flashes.pop(muzzleWorld(), 0xffcf8a, 7, 0.07);
+      st.mag--; st.cooldown = st.fireRate; recoil = Math.min(recoil + 1, 3.4); flashT = 0.13;
+      Audio.shoot(); flash.rotation.z = rand(0, TAU); recoilKick += 0.014; // camera punch
+      const mw = muzzleWorld();
+      Flashes.pop(mw, 0xffd9a0, 8, 0.1);
+      Particles.burst(mw, 4, { color: 0x5a5a66, spdMin: 0.5, spdMax: 2.5, upBias: 1.2, grav: -2, sizeMin: 0.6, sizeMax: 1.3, lifeMin: 0.22, lifeMax: 0.5 }); // muzzle smoke
       updateAmmoHUD();
       Game.doHitscan(st.damage, st.ads ? st.spread * 0.35 : st.spread);
       Game.addShake(st.ads ? 0.05 : 0.11);
@@ -592,12 +608,12 @@
 
       recoil = lerp(recoil, 0, dt * 11);
       flashT = Math.max(0, flashT - dt);
-      const fk = flashT / 0.09;
-      flashMat.opacity = flashT > 0 ? (0.5 + rand(0, 0.5)) * fk : 0;
-      flashCoreMat.opacity = flashT > 0 ? (0.7 + rand(0, 0.3)) * fk : 0;
-      const fs = flashT > 0 ? rand(0.85, 1.35) * (0.5 + fk * 0.5) : 0.001; flash.scale.set(fs, fs, fs);
+      const fk = flashT / 0.13;
+      flashMat.opacity = flashT > 0 ? (0.45 + rand(0, 0.35)) * fk : 0;
+      flashCoreMat.opacity = flashT > 0 ? (0.55 + rand(0, 0.3)) * fk : 0;
+      const fs = flashT > 0 ? rand(0.9, 1.25) * (0.55 + fk * 0.45) : 0.001; flash.scale.set(fs, fs, fs);
       // barrel flash lights the gun for those frames only
-      vmKey.intensity = 1.6 + (flashT > 0 ? 3 * fk : 0);
+      vmKey.intensity = 1.2 + (flashT > 0 ? 2.5 * fk : 0);
 
       // sway from mouse + bob from movement
       sway.x = lerp(sway.x, clamp(-input.look.x * 0.02, -0.05, 0.05), dt * 8);
@@ -639,22 +655,23 @@
     const S = spec.size, baseEmissive = 0.24;
     // Body catches light AND carries a faint under-glow so it's never pure shadow.
     const bodyMat = new THREE.MeshStandardMaterial({ color: spec.body, roughness: 0.5, metalness: 0.55, emissive: new THREE.Color(spec.core), emissiveIntensity: baseEmissive });
-    const coreMat = new THREE.MeshStandardMaterial({ color: spec.core, emissive: spec.core, emissiveIntensity: 3.2, roughness: 0.3 });
+    // Dimmer, non-clipping core so the CARAPACE stays the readable form, not a white gem.
+    const coreMat = new THREE.MeshStandardMaterial({ color: spec.core, emissive: spec.core, emissiveIntensity: 1.25, roughness: 0.3 });
 
     // Hunched, forward-leaning carapace — the readable mass.
     const shell = new THREE.Mesh(new THREE.OctahedronGeometry(S * 0.6, 0), bodyMat);
-    shell.scale.set(0.85, 0.72, 1.18); shell.rotation.x = 0.25; shell.castShadow = true; g.add(shell);
+    shell.scale.set(0.85, 0.72, 1.18); shell.rotation.x = 0.28; shell.castShadow = true; g.add(shell);
     const torso = new THREE.Mesh(new THREE.IcosahedronGeometry(S * 0.42, 0), bodyMat);
     torso.position.set(0, -S * 0.04, -S * 0.06); g.add(torso);
 
-    // Inverted-hull rim: a glowing outline so the silhouette pops against dark walls.
+    // Thin inverted-hull outline (not a body-filling shell) so the silhouette reads.
     const rim = new THREE.Mesh(new THREE.OctahedronGeometry(S * 0.6, 0), new THREE.MeshBasicMaterial({ color: spec.core, side: THREE.BackSide }));
-    rim.scale.set(0.85 * 1.14, 0.72 * 1.14, 1.18 * 1.14); rim.rotation.x = 0.25; g.add(rim);
+    rim.scale.set(0.85 * 1.06, 0.72 * 1.06, 1.18 * 1.06); rim.rotation.x = 0.28; g.add(rim);
 
-    // Glowing core "eye" + ring at the front.
-    const core = new THREE.Mesh(new THREE.SphereGeometry(S * 0.2, 14, 14), coreMat);
-    core.position.set(0, S * 0.02, S * 0.5); g.add(core);
-    const eyeRim = new THREE.Mesh(new THREE.TorusGeometry(S * 0.27, S * 0.05, 8, 18), coreMat);
+    // Small bright pupil + iris ring (a face, not a lantern).
+    const core = new THREE.Mesh(new THREE.SphereGeometry(S * 0.12, 12, 12), coreMat);
+    core.position.set(0, S * 0.02, S * 0.52); g.add(core);
+    const eyeRim = new THREE.Mesh(new THREE.TorusGeometry(S * 0.22, S * 0.045, 8, 18), coreMat);
     eyeRim.position.copy(core.position); eyeRim.rotation.y = Math.PI / 2; g.add(eyeRim);
 
     // Swept-back blades (menace) + forward mandibles framing the eye.
@@ -663,9 +680,24 @@
       const a = (i - 1) * 0.5; bl.position.set(Math.sin(a) * S * 0.36, S * 0.36, -S * 0.34);
       bl.rotation.set(-1.15, a, 0); bl.castShadow = true; g.add(bl);
     }
+    const mandMat = new THREE.MeshStandardMaterial({ color: spec.core, emissive: spec.core, emissiveIntensity: 0.9, roughness: 0.4 });
     for (const sx of [-1, 1]) {
-      const mand = new THREE.Mesh(new THREE.ConeGeometry(S * 0.07, S * 0.56, 4), coreMat);
+      const mand = new THREE.Mesh(new THREE.ConeGeometry(S * 0.07, S * 0.56, 4), mandMat);
       mand.position.set(sx * S * 0.28, -S * 0.12, S * 0.46); mand.rotation.set(1.35, 0, sx * 0.45); g.add(mand);
+    }
+
+    // Per-type silhouette so the three archetypes differ by SHAPE, not just hue.
+    if (spec.key === 'brute') {
+      for (const sx of [-1, 1]) {
+        const plate = new THREE.Mesh(new THREE.BoxGeometry(S * 0.3, S * 0.52, S * 0.6), bodyMat);
+        plate.position.set(sx * S * 0.62, S * 0.16, -S * 0.04); plate.rotation.z = sx * 0.3; plate.castShadow = true; g.add(plate);
+      }
+      shell.scale.set(1.05, 0.66, 1.15);
+    } else if (spec.key === 'spitter') {
+      const gland = new THREE.Mesh(new THREE.SphereGeometry(S * 0.32, 12, 10), bodyMat);
+      gland.position.set(0, S * 0.42, S * 0.05); gland.scale.y = 1.25; gland.castShadow = true; g.add(gland);
+      const sac = new THREE.Mesh(new THREE.SphereGeometry(S * 0.15, 10, 8), mandMat);
+      sac.position.set(0, S * 0.54, S * 0.16); g.add(sac);
     }
 
     // Tripod legs (animated stride).
@@ -679,7 +711,7 @@
       g.add(leg); legs.push(leg);
     }
 
-    const light = new THREE.PointLight(spec.core, 1.1, 10, 2); light.position.copy(core.position); g.add(light);
+    const light = new THREE.PointLight(spec.core, 0.55, 8, 2); light.position.copy(core.position); g.add(light);
     g.userData = { torso, shell, core, eyeRim, coreMat, bodyMat, rim, light, legs, baseEmissive, coreHex: spec.core };
     return g;
   }
@@ -756,7 +788,7 @@
         if (e.spawnT > 0) { e.spawnT -= dt; const s = clamp(1 - e.spawnT / 0.6, 0, 1); e.mesh.scale.setScalar(s); }
         e.phase += dt;
         // hit flash — white pop above the constant under-glow
-        if (e.hitT > 0) { e.hitT -= dt; const f = e.hitT / 0.12; ud.coreMat.emissiveIntensity = 3.2 + 14 * f; ud.bodyMat.emissive.setHex(0xffffff); ud.bodyMat.emissiveIntensity = 0.3 + 1.4 * f; }
+        if (e.hitT > 0) { e.hitT -= dt; const f = e.hitT / 0.12; ud.coreMat.emissiveIntensity = 1.25 + 9 * f; ud.bodyMat.emissive.setHex(0xffffff); ud.bodyMat.emissiveIntensity = 0.3 + 1.3 * f; }
         else { ud.bodyMat.emissive.setHex(ud.coreHex); }
         // movement toward player
         _toP.set(playerPos.x - e.mesh.position.x, 0, playerPos.z - e.mesh.position.z);
@@ -782,7 +814,7 @@
         const movingNow = !stop && e.spawnT <= 0;
         for (let li = 0; li < ud.legs.length; li++) ud.legs[li].rotation.x = movingNow ? Math.sin(e.phase * 9 + li * 2.1) * 0.5 : Math.sin(e.phase * 2 + li) * 0.05;
         // menace telegraph — the eye glares brighter as it closes on the player
-        if (e.hitT <= 0) { const close = clamp(1 - (dist - sp.melee) / 5, 0, 1); ud.coreMat.emissiveIntensity = 3.2 + close * 4 + Math.sin(e.phase * 10) * close * 1.5; ud.bodyMat.emissiveIntensity = ud.baseEmissive + close * 0.5; }
+        if (e.hitT <= 0) { const close = clamp(1 - (dist - sp.melee) / 5, 0, 1); ud.coreMat.emissiveIntensity = 1.25 + close * 2.2 + Math.sin(e.phase * 10) * close * 0.8; ud.bodyMat.emissiveIntensity = ud.baseEmissive + close * 0.3; }
         updateBar(e);
         // attacks
         if (sp.ranged) {
@@ -899,7 +931,7 @@
      GAME STATE / WAVES / HUD
      ========================================================================= */
   let running = false, paused = false;
-  let shake = 0, shakeV = new THREE.Vector3(), hitstop = 0;
+  let shake = 0, shakeV = new THREE.Vector3(), hitstop = 0, recoilKick = 0;
   const Game = (function () {
     let wave = 0, score = 0, kills = 0, spawnQueue = [], spawnTimer = 0, intermission = 0, aliveTarget = 0, crosshairSpread = 8;
 
@@ -989,8 +1021,10 @@
         const killed = e.hp - finalDmg <= 0;
         Enemies.damage(e, finalDmg, crit);
         Tracers.fire(muzzle, hit.point);
-        Particles.burst(hit.point, crit ? 16 : 10, { color: e.spec.core, spdMin: 3, spdMax: 9, sizeMin: 0.4, sizeMax: 1.1, lifeMin: 0.2, lifeMax: 0.5, grav: 8, upBias: 1 });
-        Flashes.pop(hit.point, e.spec.core, 3, 0.08);
+        // sharp hot-white spark shards + a slower colored ember spray
+        Particles.burst(hit.point, crit ? 14 : 9, { color: 0xffffff, spdMin: 7, spdMax: 17, sizeMin: 0.25, sizeMax: 0.7, lifeMin: 0.06, lifeMax: 0.2, grav: 3 });
+        Particles.burst(hit.point, crit ? 12 : 7, { color: e.spec.core, spdMin: 3, spdMax: 9, sizeMin: 0.4, sizeMax: 1.0, lifeMin: 0.18, lifeMax: 0.45, grav: 8, upBias: 1 });
+        Flashes.pop(hit.point, 0xffffff, 4, 0.08);
         Audio.hit(crit); hitmarker(killed);
         if (crit && !killed) popup(hit.point, 'CRIT', 0xffb020, true);
       } else {
@@ -1100,9 +1134,10 @@
   function updatePlayer(dt) {
     if (!player.alive) return;
     // orientation from yaw/pitch
+    recoilKick = lerp(recoilKick, 0, dt * 9);
     camera.rotation.set(0, 0, 0);
     camera.rotation.order = 'YXZ';
-    camera.rotation.y = player.yaw; camera.rotation.x = player.pitch;
+    camera.rotation.y = player.yaw; camera.rotation.x = player.pitch + recoilKick;
 
     _forward.set(Math.sin(player.yaw), 0, Math.cos(player.yaw)); // note: -z forward handled below
     // In THREE, forward is -z. Build movement basis:
