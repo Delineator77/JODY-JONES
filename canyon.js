@@ -467,13 +467,20 @@
   const ALB_DEEP = new THREE.Color(0x6f3a22);   // damp lower sandstone
   const ALB_MID = new THREE.Color(0x9c5330);    // burnt vermillion body
   const ALB_HI = new THREE.Color(0xbe7442);     // sun-bleached upper rock
+  const ALB_COOL = new THREE.Color(0x3b3350);   // shaded rock body, pulled toward navy
   function cliffColor(worldY, lit, topY) {
     const h = clamp(worldY / 60, 0, 1);
     const c = ALB_DEEP.clone().lerp(ALB_MID, smoothstep(0.02, 0.42, h));
     c.lerp(ALB_HI, smoothstep(0.45, 0.95, h) * 0.9);
+    // The wall BODY must sit in cool shadow so it cannot out-saturate the gunfire; only
+    // the top rim burns. Without this the whole background is the warmest thing in frame.
     if (topY != null) {
       const fromTop = topY - worldY;
-      c.lerp(ALB_HI, smoothstep(10, 1, fromTop) * 0.35);      // weathered summits
+      const rim = smoothstep(9, 1.5, fromTop);
+      c.lerp(ALB_COOL, (1 - rim) * 0.62);                     // body cooled + desaturated
+      c.lerp(ALB_HI, rim * 0.55);                             // burning rim on the summit
+    } else {
+      c.lerp(ALB_COOL, 0.5);
     }
     // per-column mineral variation so neighbouring columns don't read as one flat mass
     c.multiplyScalar(0.82 + 0.30 * lit);
@@ -885,10 +892,11 @@
       map: ponchoTexture(), roughness: 0.95, metalness: 0, flatShading: true, side: THREE.DoubleSide }));
     const shirt = toon(0x1b2440, { flatShading: true });
     const hatM = toon(0x14161e, { flatShading: true });
-    const hairM = toon(0xb98b4a, { flatShading: true });     // blond, shoulder length
+    const hairM = toon(0xe0b366, { flatShading: true });     // blond — must out-value the olive
     const skinM = toon(0xa9744c, { flatShading: true });
     const leatherM = toon(0x4a2f18, { flatShading: true });
-    const steelM = toon(0x2b303b, { flatShading: true, roughness: 0.42, metalness: 0.6 });
+    const gloveM = toon(0x8a6a3f, { flatShading: true });     // light tan — reads against ink
+    const steelM = toon(0x6b6a66, { flatShading: true, roughness: 0.35, metalness: 0.65 });  // Stone Gray
     function b(w, h, d, mat, x, y, z, rz, rx) {
       const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
       m.position.set(x, y, z); if (rz) m.rotation.z = rz; if (rx) m.rotation.x = rx;
@@ -905,7 +913,30 @@
       [0.29, 0.60], [0.02, 0.62]], 13, shirt);
     torso.position.set(0, 1.02, 0); g.add(torso);
     // THE PONCHO — a flared lathe over the torso, hem sitting mid-thigh
-    const poncho = lathe([[0.14, 0.86], [0.34, 0.80], [0.44, 0.52], [0.50, 0.16], [0.52, 0.0]], 16, ponchoMat);
+    const poncho = lathe([[0.14, 0.86], [0.34, 0.80], [0.44, 0.52], [0.50, 0.16], [0.52, 0.0]], 22, ponchoMat);
+    // DRAPE: a solid of revolution reads as a traffic cone. Push the hem into hanging
+    // folds — deep pleats around the circumference, a lift where the gun arm raises the
+    // cloth, and a sag on the slack side — so it reads as heavy woven wool.
+    (function drape() {
+      const pp = poncho.geometry.attributes.position;
+      const v = new THREE.Vector3();
+      for (let k = 0; k < pp.count; k++) {
+        v.set(pp.getX(k), pp.getY(k), pp.getZ(k));
+        const ang = Math.atan2(v.z, v.x);
+        const r = Math.hypot(v.x, v.z);
+        const down = clamp(1 - v.y / 0.86, 0, 1);          // folds deepen toward the hem
+        // pleats: alternating in/out around the circumference
+        const pleat = Math.sin(ang * 7.0) * 0.030 + Math.sin(ang * 13.0 + 1.1) * 0.014;
+        const nr = r + pleat * down * 1.5;
+        v.x = Math.cos(ang) * nr; v.z = Math.sin(ang) * nr;
+        // the raised gun arm (his right, +x) lifts the cloth; the far side hangs lower
+        const lift = Math.max(0, Math.cos(ang)) * 0.16 * down;
+        const sag = Math.max(0, -Math.cos(ang)) * 0.06 * down;
+        v.y += lift - sag;
+        pp.setXYZ(k, v.x, v.y, v.z);
+      }
+      pp.needsUpdate = true; poncho.geometry.computeVertexNormals();
+    })();
     poncho.position.set(0, 0.82, 0); g.add(poncho);
     // fringe hanging off the hem
     for (let i = 0; i < 26; i++) {
@@ -917,35 +948,55 @@
     // arms: left braced on the rock, right extended with the Colt
     b(0.16, 0.42, 0.17, shirt, -0.40, 1.28, 0.10, 0.55);
     b(0.15, 0.40, 0.16, shirt, -0.60, 1.06, 0.34, 0.95);
-    b(0.16, 0.40, 0.17, shirt, 0.40, 1.42, 0.04, -0.52);
-    b(0.15, 0.46, 0.16, shirt, 0.60, 1.40, -0.34, -0.24, -1.05);     // right forearm extended
-    const rHand = b(0.13, 0.13, 0.15, leatherM, 0.66, 1.40, -0.66, 0, -0.3);
+    b(0.17, 0.42, 0.18, shirt, 0.44, 1.50, 0.02, -0.62);      // raised elbow
+    b(0.155, 0.52, 0.165, shirt, 0.72, 1.47, -0.40, -0.16, -1.15);   // forearm crossing OUTSIDE the poncho contour
+    const rHand = b(0.145, 0.145, 0.16, gloveM, 0.80, 1.46, -0.74, 0, -0.3);
     // the Colt in his fist
     const colt = new THREE.Group();
     const cb = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.030, 0.34, 8), steelM);
     cb.rotation.x = Math.PI / 2; cb.position.set(0, 0.02, -0.20); colt.add(cb);
     const ccyl = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.10, 10), steelM);
     ccyl.rotation.x = Math.PI / 2; colt.add(ccyl);
-    const cg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.15, 0.07), toon(0x5a3418, { flatShading: true }));
+    const cg = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.16, 0.075), toon(0x7a4a24, { flatShading: true }));
     cg.position.set(0, -0.11, 0.09); cg.rotation.x = -0.4; colt.add(cg);
-    colt.position.set(0.67, 1.42, -0.80); g.add(colt);
+    colt.position.set(0.82, 1.47, -0.88); g.add(colt);
     const coltFlash = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.6), new THREE.MeshBasicMaterial({
       map: TEX.flash, color: 0xffd9a0, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
-    coltFlash.position.set(0.67, 1.44, -1.05); g.add(coltFlash);
-    const coltLight = new THREE.PointLight(0xffa848, 0, 8); coltLight.position.set(0.67, 1.45, -1.1); g.add(coltLight);
+    coltFlash.position.set(0.82, 1.49, -1.14); g.add(coltFlash);
+    const coltLight = new THREE.PointLight(0xffa848, 0, 8); coltLight.position.set(0.82, 1.50, -1.2); g.add(coltLight);
     // neck, head, blond hair under a black hat
     b(0.16, 0.12, 0.16, skinM, 0, 1.62, 0);
-    const head = b(0.24, 0.27, 0.25, skinM, 0, 1.80, 0);
-    b(0.27, 0.20, 0.27, hairM, 0, 1.84, -0.02);                      // hair mass
-    b(0.30, 0.22, 0.14, hairM, 0, 1.72, -0.12);                      // shoulder-length fall at the back
-    const brim = lathe([[0.03, 0.05], [0.20, 0.038], [0.34, 0.014], [0.45, 0], [0.47, 0.055]], 14, hatM);
-    brim.position.set(0, 1.94, 0); g.add(brim);
-    const crown = lathe([[0.02, 0], [0.19, 0.012], [0.215, 0.15], [0.19, 0.27], [0.02, 0.29]], 12, hatM);
-    crown.position.set(0, 1.95, 0); g.add(crown);
-    b(0.41, 0.045, 0.41, toon(0x3a2416, { flatShading: true }), 0, 2.01, 0);   // hat band
+    const head = b(0.235, 0.25, 0.245, skinM, 0, 1.815, 0);
+    b(0.185, 0.085, 0.205, skinM, 0, 1.675, -0.012);          // jaw wedge, narrower than skull
+    // PROFILE: at cinematic range the head is large enough that a blank box reads as a
+    // mannequin. Brow, nose, jaw and stubble give him a face in three-quarter view.
+    b(0.245, 0.045, 0.06, skinM, 0, 1.875, -0.145);                  // brow ridge
+    b(0.075, 0.075, 0.085, skinM, 0.02, 1.815, -0.165);              // nose
+    b(0.20, 0.075, 0.05, toon(0x6f4630, { flatShading: true }), 0, 1.712, -0.135);  // jaw / stubble
+        b(0.055, 0.10, 0.09, skinM, 0.135, 1.80, -0.01);                 // ears
+    b(0.055, 0.10, 0.09, skinM, -0.135, 1.80, -0.01);
+    // blond hair: mass under the hat plus a shoulder-length fall, shaped not blocky
+    b(0.275, 0.15, 0.275, hairM, 0, 1.875, -0.005);
+    b(0.315, 0.34, 0.17, hairM, 0, 1.655, 0.105);                    // fall down his back
+    b(0.115, 0.30, 0.115, hairM, 0.150, 1.655, 0.02);                // side locks
+    b(0.115, 0.30, 0.115, hairM, -0.150, 1.655, 0.02);
+    b(0.30, 0.13, 0.15, hairM, 0, 1.505, 0.085);                     // ends OVER the poncho collar
+    const brim = lathe([[0.03, 0.045], [0.16, 0.034], [0.26, 0.012], [0.33, 0], [0.345, 0.05]], 16, hatM);
+    brim.position.set(0, 1.94, -0.01); brim.rotation.z = 0.09; brim.scale.set(1, 1, 1.12); g.add(brim);
+    const crown = lathe([[0.02, 0], [0.155, 0.012], [0.175, 0.13], [0.135, 0.25], [0.02, 0.27]], 12, hatM);
+    crown.position.set(0, 1.95, 0); crown.rotation.z = 0.09; g.add(crown);
+    b(0.31, 0.042, 0.31, toon(0x3a2416, { flatShading: true }), 0, 2.00, 0);   // hat band
+
+    // CHARACTER KEY: he stands inside the canyon's shadow, so skylight alone flattens
+    // hair, skin, poncho and gun into one value. A dedicated short-throw warm key (the
+    // standard film fix) separates them without touching the environment's lighting.
+    const charKey = new THREE.PointLight(0xffc98a, 3.6, 5.0, 2.0);
+    charKey.position.set(-1.5, 3.0, -1.4); g.add(charKey);
+    const charFill = new THREE.PointLight(0x8fb0e8, 1.5, 4.2, 2.0);
+    charFill.position.set(1.7, 1.6, 1.5); g.add(charFill);
 
     g.position.set(0.6, -0.55, 6.4);
-    g.rotation.y = Math.PI + 0.10;      // facing the far bank, slightly turned
+    g.rotation.y = 0.10;                // authored facing -z, i.e. toward the far bank
     shad(g);
     g.visible = false;
     scene.add(g);
@@ -1651,7 +1702,7 @@
     if (cine) {
       // Frame Jody from over his shoulder; he yaws with the player's aim.
       Jody.group.visible = true; Colt.group.visible = false;
-      Jody.group.rotation.y = Math.PI + 0.10 + player.yaw * 0.55;
+      Jody.group.rotation.y = 0.10 + player.yaw * 0.55;
       const base = Jody.group.position;
       const off = CINE.offset.clone().applyAxisAngle(_up, player.yaw * 0.55);
       camera.position.set(base.x + off.x, base.y + off.y, base.z + off.z);
