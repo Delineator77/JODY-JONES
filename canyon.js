@@ -55,7 +55,7 @@
       fill: 0x5a7dc0, fillI: 0.34, bounce: 0x2c4a76, bounceI: 0.22,
       fog: 0x33344f, fogDensity: 0.0115,
       sky: [0xe89a52, 0x8a5a55, 0x141f38],
-      river: 0xf0993e,
+      river: 0xf0993e, rockTint: 0xffffff,
       grade: { shadow: 0x1b2a4e, light: 0xffd7a2, tint: 0.34, sat: 1.24 },
       mist: [0xe0925a, 0xc07c58, 0x74849f, 0x4a5c85], mistI: 1.0,
       bloom: 0.35,
@@ -69,7 +69,7 @@
       fill: 0x3f5f9c, fillI: 0.20, bounce: 0x1c3157, bounceI: 0.16,
       fog: 0x16203a, fogDensity: 0.0095,
       sky: [0x40567f, 0x22304f, 0x080d1c],
-      river: 0xcfe0f5,
+      river: 0xcfe0f5, rockTint: 0x7d93d6,
       grade: { shadow: 0x101d3c, light: 0xcadcf6, tint: 0.42, sat: 1.10 },
       mist: [0x50699c, 0x44578a, 0x36466e, 0x27334f], mistI: 0.85,
       bloom: 0.5,
@@ -137,6 +137,9 @@
       '  float t = smoothstep(0.06, 0.72, lum(c));\n' +
       '  vec3 tinted = c * mix(uShadowTint * 2.6, uLightTint, t);\n' +
       '  c = mix(c, tinted, uTint);\n' +
+      '  // lift crushed blacks to Midnight Navy #14203a — shadow mass must be navy, not mud\n' +
+      '  float dk = 1.0 - smoothstep(0.0, 0.30, lum(c));\n' +
+      '  c += vec3(0.055,0.088,0.168) * dk * 0.42;\n' +
       '  // saturation lift so the palette reads as ink-and-paint, not photography\n' +
       '  c = clamp(mix(vec3(lum(c)), c, uSat), 0.0, 1.0);\n' +
       '  gl_FragColor = vec4(c, 1.0);\n' +
@@ -441,7 +444,8 @@
       c.lerp(ALB_HI, smoothstep(10, 1, fromTop) * 0.35);      // weathered summits
     }
     // per-column mineral variation so neighbouring columns don't read as one flat mass
-    return c.multiplyScalar(0.82 + 0.30 * lit);
+    c.multiplyScalar(0.82 + 0.30 * lit);
+    return c.multiply(new THREE.Color(TOD.rockTint));
   }
   // A canyon wall built from faceted vertical COLUMNS (columnar sandstone) — each a flat
   // color mass with hard edges to its neighbours, jagged tops biting into the sky strip.
@@ -493,6 +497,20 @@
   // central sky gap (the canyon opening) — the gang-on-the-bank composition.
   cliffs.add(buildCliff(150, 58, 17, new THREE.Vector3(-44, FLOOR, -4), Math.PI / 2 + 0.05, 12, { warm: 0.5 }));   // left wall catches the sun
   cliffs.add(buildCliff(150, 58, 17, new THREE.Vector3(44, FLOOR, -4), -Math.PI / 2 - 0.05, 12, { warm: -0.15 })); // right wall shadowed
+
+  // NEAR WALLS — the enclosure. These start beside/behind the player and run tall enough
+  // to exit the top of frame, cropping the left and right edges so the camera is inside a
+  // stone corridor rather than looking at a backdrop. They are excluded from casting
+  // shadows: physically they'd black out the whole gorge, and the key must still reach
+  // the far wall. Depth layering (near = darkest/coolest) does the rest.
+  const nearWalls = new THREE.Group();
+  nearWalls.add(buildCliff(64, 150, 7, new THREE.Vector3(-25, FLOOR, 16), Math.PI / 2 + 0.30, 14, { warm: -0.42 }));
+  nearWalls.add(buildCliff(64, 150, 7, new THREE.Vector3(25, FLOOR, 16), -Math.PI / 2 - 0.30, 14, { warm: -0.46 }));
+  // a second, slightly further pair so the recession steps rather than jumps
+  nearWalls.add(buildCliff(58, 112, 7, new THREE.Vector3(-33, FLOOR, 0), Math.PI / 2 + 0.16, 13, { warm: -0.30 }));
+  nearWalls.add(buildCliff(58, 112, 7, new THREE.Vector3(33, FLOOR, 0), -Math.PI / 2 - 0.16, 13, { warm: -0.34 }));
+  nearWalls.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = true; } });
+  cliffs.add(nearWalls);
   scene.add(cliffs);
 
   /* ----- Sky strip -------------------------------------------------------- */
@@ -573,17 +591,17 @@
         '  vec2 flow = vec2(uTime*1.4, uTime*0.25);\n' +
         '  float n = fbm(vP*vec2(0.9,1.7) - flow);\n' +
         '  float band = floor(n*4.0)/4.0;\n' +               // posterized broad masses
-        '  vec3 deep = vec3(0.030,0.058,0.125);\n' +   // midnight navy channel
-        '  vec3 lit  = vec3(0.085,0.165,0.285);\n' +   // lit ripple
+        '  vec3 deep = vec3(0.048,0.078,0.141);\n' +   // midnight navy channel
+        '  vec3 lit  = vec3(0.078,0.126,0.227);\n' +   // lit ripple
         '  vec3 col = mix(deep, lit, band*0.85 + 0.15);\n' +
         '  float f = fbm(vP*vec2(2.3,4.0) - flow*2.2);\n' +
         '  float caps = smoothstep(0.60,0.82,f);\n' +
         '  // SIGNATURE: a defined reflection streak running toward the viewer\n' +
         '  float streakX = sin(vP.y*0.30 + 0.6)*2.4 + sin(vP.y*0.85)*0.9;\n' +
-        '  float streak = smoothstep(5.5, 0.0, abs(vP.x - streakX));\n' +
+        '  float streak = pow(smoothstep(3.4, 0.0, abs(vP.x - streakX)), 1.6);\n' +
         '  // amber reflection — deliberately capped below clipping so it never blows to white\n' +
         '  vec3 sunCol = uSun * 0.82;\n' +
-        '  col = mix(col, sunCol, streak*0.78);\n' +
+        '  col = mix(col, sunCol, streak*0.92);\n' +
         '  // foam caps — a touch brighter only inside the reflection\n' +
         '  col = mix(col, mix(vec3(0.42,0.47,0.55), sunCol, 0.55), caps*(0.18 + 0.42*streak));\n' +
         '  // shimmering specular along the streak\n' +
@@ -626,7 +644,7 @@
   }
   // Near bank (player side) — cool wet gravel; Far bank (enemies) — sandstone shelves.
   bank(7.8, 2.6, COL.rockShadow, 0.0);   // just the near water's edge
-  bank(-12, 12, COL.sand, 0.2);
+  bank(-12, 12, 0x543d26, 0.2);
 
   // Far-bank elevated shelves (give gunslingers different heights)
   function shelf(x, z, w, d, h, color) {
@@ -635,9 +653,9 @@
     m.position.set(x, h / 2, z); ink(m, 0.0035); shad(m); world.add(m); return m;
   }
   // Low far-bank rises the outlaws stand on — NOT tall blocks (the walls are the height).
-  shelf(-15, -13, 14, 7, 0.8, COL.sand);
-  shelf(10, -15, 16, 8, 1.3, COL.rockMid);
-  shelf(1, -18, 13, 7, 1.0, COL.sand);
+  shelf(-15, -13, 14, 7, 0.8, 0x4f3a24);
+  shelf(10, -15, 16, 8, 1.3, 0x5d3320);
+  shelf(1, -18, 13, 7, 1.0, 0x4f3a24);
 
   // Scatter cover rocks along both banks + in the river.
   const riverRocks = [];
@@ -775,18 +793,18 @@
     const VM_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.45, fog: true });
     // `flat(hex)` now returns a tag object; geometry gets baked at mesh-build time.
     const flat = (hex) => ({ __bake: hex });
-    const steel = flat(0x28323f);
-    const steelDark = flat(0x18202c);
+    const steel = flat(0x18202c);
+    const steelDark = flat(0x0e141d);
     const steelInk = 0.006;
-    const wood = flat(0x6b3d1c);
-    const glove = flat(0x5a4029);
-    const cuff = flat(0x1b2440);
+    const wood = flat(0x3f2410);
+    const glove = flat(0x33240f);
+    const cuff = flat(0x121a2e);
     function box(w, h, d, mat, x, y, z, rx, ry, rz) {
       const m = new THREE.Mesh(bakeFaces(new THREE.BoxGeometry(w, h, d), mat.__bake), VM_MAT);
       m.position.set(x, y, z); if (rx) m.rotation.x = rx; if (ry) m.rotation.y = ry; if (rz) m.rotation.z = rz;
       grp.add(m); return m;
     }
-    const poncho = flat(0x5d6539);
+    const poncho = flat(0x39411f);
     function cyl(rt, rb, h, seg, mat, x, y, z, rx, rz) {
       const m = new THREE.Mesh(bakeFaces(new THREE.CylinderGeometry(rt, rb, h, seg), mat.__bake), VM_MAT);
       m.position.set(x, y, z); if (rx != null) m.rotation.x = rx; if (rz) m.rotation.z = rz;
@@ -811,22 +829,24 @@
     box(0.125, 0.055, 0.10, glove, 0.0, -0.055, 0.145, 0.15);               // fingers curling to trigger
     box(0.125, 0.048, 0.085, glove, 0.0, -0.105, 0.135, 0.15);
     box(0.062, 0.075, 0.10, glove, -0.055, -0.075, 0.215, 0.30);            // thumb along the frame
-    // --- forearm: dark navy shirt sleeve under the olive poncho, with fringe ---
-    const wrist = box(0.155, 0.155, 0.14, glove, 0.02, -0.245, 0.335, 0.45); ink(wrist, 0.005);
-    const sleeve = box(0.175, 0.175, 0.30, cuff, 0.045, -0.335, 0.50, 0.45); ink(sleeve, 0.005);
-    const cape = box(0.30, 0.26, 0.34, poncho, 0.075, -0.44, 0.72, 0.45); ink(cape, 0.005);
-    for (let i = 0; i < 5; i++) {                                            // poncho fringe
-      box(0.022, 0.10, 0.022, poncho, -0.03 + i * 0.045, -0.575, 0.60 + i * 0.012, 0.45);
-    }
+    // --- forearm entering from the bottom-right corner ---
+    // Everything MUST stay in front of the camera's near plane. The old poncho cape sat at
+    // camera-space z ~ +0.01 (i.e. behind the lens) and rendered as a clipped white block.
+    const wrist = box(0.150, 0.150, 0.15, glove, 0.025, -0.250, 0.20, 0.45); ink(wrist, 0.005);
+    const sleeve = box(0.185, 0.185, 0.26, cuff, 0.055, -0.340, 0.34, 0.45); ink(sleeve, 0.005);
+    const cuffBand = box(0.205, 0.075, 0.10, poncho, 0.048, -0.300, 0.27, 0.45);   // olive poncho cuff
+    ink(cuffBand, 0.005);
 
     // muzzle flash + smoke anchor
-    const flash = new THREE.Mesh(new THREE.PlaneGeometry(0.40, 0.40), new THREE.MeshBasicMaterial({ map: TEX.flash, color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
-    flash.position.set(0, 0.035, -0.76); grp.add(flash);
-    const flashPt = new THREE.PointLight(0xffb060, 0, 7); flashPt.position.set(0, 0.2, -1); grp.add(flashPt);
+    const flash = new THREE.Mesh(new THREE.PlaneGeometry(0.30, 0.30), new THREE.MeshBasicMaterial({ map: TEX.flash, color: 0xffd9a0, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
+    flash.position.set(0, 0.035, -0.74); grp.add(flash);
+    const flashPt = new THREE.PointLight(0xffa040, 0, 4.0); flashPt.position.set(0, 0.12, -0.6); grp.add(flashPt);
 
     grp.position.set(0.235, -0.175, -0.52);
     grp.rotation.y = -0.17; grp.rotation.z = 0.05; grp.rotation.x = 0.05;
     grp.scale.setScalar(0.74);
+    const kicker = new THREE.PointLight(0xffc98a, 1.5, 2.2, 2.0);
+    kicker.position.set(-0.55, 0.75, -0.35); camera.add(kicker);
     camera.add(grp); scene.add(camera);
 
     let recoil = 0, flashT = 0, sway = new THREE.Vector2(), bob = 0;
@@ -935,9 +955,9 @@
     rifle.rotation.z = 0.06 + (V % 3) * 0.05;
     g.add(rifle);
     // muzzle flash at the barrel tip
-    const flash = new THREE.Mesh(new THREE.PlaneGeometry(0.55, 0.55), new THREE.MeshBasicMaterial({ map: TEX.flash, color: COL.muzzle, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
+    const flash = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.95), new THREE.MeshBasicMaterial({ map: TEX.flash, color: 0xffd9a0, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
     flash.position.set(-0.76, 1.20, 0.34); g.add(flash);
-    const fpt = new THREE.PointLight(0xffb060, 0, 5.5); fpt.position.set(-0.92, 1.22, 0.46); g.add(fpt);
+    const fpt = new THREE.PointLight(0xffa848, 0, 9.0); fpt.position.set(-0.92, 1.22, 0.46); g.add(fpt);
     g.userData = { flash, fpt, rifle };
     shad(g);
     return g;
@@ -946,11 +966,13 @@
     const list = [];
     // seat each outlaw behind a far-bank cover point at a chosen height
     const seats = [
-      { x: -17, y: 0.2, z: -9, hide: -1.9, color: 0x3a2a44, scarf: 0x6a3a2a },
-      { x: -7.5, y: 0.4, z: -10, hide: -2.0, color: 0x2c2438, scarf: 0x555c37 },
-      { x: 3, y: 1.3, z: -11, hide: -2.0, color: 0x40302a, scarf: 0x7a4a2a }, // on a shelf, higher
-      { x: 12.5, y: 0.5, z: -10, hide: -2.0, color: 0x2a3040, scarf: 0x555c37 },
-      { x: 20, y: 0.3, z: -11, hide: -1.9, color: 0x352838, scarf: 0x6a3a2a },
+      // Deliberately NOT a firing line: depths, heights and spacing all differ, and two
+      // are clustered so the eye reads groups instead of a metronome.
+      { x: -13.5, y: 0.15, z: -6.6, hide: -1.9, color: 0x3a2a44, scarf: 0x6a3a2a },  // closest, biggest
+      { x: -4.0, y: 0.45, z: -10.5, hide: -2.0, color: 0x2c2438, scarf: 0x555c37 },
+      { x: -1.0, y: 1.35, z: -13.0, hide: -2.0, color: 0x40302a, scarf: 0x7a4a2a },  // up on a shelf
+      { x: 11.0, y: 0.30, z: -8.2, hide: -2.0, color: 0x2a3040, scarf: 0x555c37 },
+      { x: 21.0, y: 0.35, z: -15.5, hide: -1.9, color: 0x352838, scarf: 0x6a3a2a },  // furthest, hazed
     ];
     for (const s of seats) {
       const o = makeOutlaw(s.color, s.scarf, seats.indexOf(s));
@@ -989,12 +1011,12 @@
         o.rotation.y = Math.atan2(camera.position.x - o.position.x, camera.position.z - o.position.z);
         // flash decay
         const f = o.userData.flash;
-        if (f.material.opacity > 0) { f.material.opacity = Math.max(0, f.material.opacity - dt * 5); o.userData.fpt.intensity = f.material.opacity * 1.8; }
+        if (f.material.opacity > 0) { f.material.opacity = Math.max(0, f.material.opacity - dt * 5); o.userData.fpt.intensity = f.material.opacity * 4.2; }
       }
     }
     function fire(o) {
       o.userData.flash.material.opacity = 1; o.userData.flash.material.rotation = rnd(0, 6.28);
-      o.userData.fpt.intensity = 1.8;
+      o.userData.fpt.intensity = 4.2;
       Audio.enemyShot(o.position);
       Puffs.spawn(o.position.x - 0.85, o.position.y + 1.2, o.position.z + 0.35, 0x9aa7c0, 2);
       // a near-miss on the player: chip the boulder + whistle + nerve hit
@@ -1049,16 +1071,16 @@
     brim.position.set(0, 3.06, 0.01); g.add(brim);
     const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.36, 0.40, 10), hat);
     crown.position.set(0, 3.28, 0); g.add(crown);
-    b(0.76, 0.07, 0.76, toon(0x24262f, { flatShading: true }), 0, 3.11, 0);      // hat band
+    b(0.78, 0.085, 0.78, toon(0xa87b3e, { flatShading: true }), 0, 3.11, 0);    // Aged Brass band — Crow only
     // long Sharps rifle, butt on the ground, barrel angled across him
     const sharps = new THREE.Group();
-    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 2.5, 8), toon(0x22252e, { flatShading: true }));
-    bar.rotation.z = 0.30; sharps.add(bar);
-    const st = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.17, 0.12), toon(0x3a2413, { flatShading: true }));
-    st.position.set(-0.42, -1.28, 0); st.rotation.z = 0.30; sharps.add(st);
-    const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.85, 8), toon(0x1a1c24, { flatShading: true }));
-    scope.rotation.z = 0.30; scope.position.set(0.10, 0.30, 0.13); sharps.add(scope);
-    sharps.position.set(0.80, 1.55, 0.24); g.add(sharps);
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.055, 3.05, 8), toon(0x22252e, { flatShading: true }));
+    bar.rotation.z = Math.PI / 2; sharps.add(bar);                       // horizontal — his signature line
+    const st = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.20, 0.14), toon(0x3a2413, { flatShading: true }));
+    st.position.set(1.62, -0.04, 0); sharps.add(st);
+    const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 1.15, 8), toon(0x1a1c24, { flatShading: true }));
+    scope.rotation.z = Math.PI / 2; scope.position.set(0.30, 0.17, 0.10); sharps.add(scope);
+    sharps.position.set(-0.30, 2.05, 0.30); g.add(sharps);
     const glow = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.6), new THREE.MeshBasicMaterial({ map: TEX.glow, color: 0xffca7a, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
     glow.position.set(1.25, 2.75, 0.45); g.add(glow);
     const pt = new THREE.PointLight(0xffc070, 0, 14); pt.position.set(1.3, 2.8, 0.7); g.add(pt);
@@ -1470,7 +1492,7 @@
   window.__dbg = { yaw: () => player.yaw, pitch: () => player.pitch, ammo: () => ammo, puffs: () => Puffs.count(), enemies: () => Enemies.list.length };
   window.__fire = () => fire();
   window.__reload = () => { ammo = 6; updateRounds(); };
-  window.__enemyFire = () => { for (const o of Enemies.list) { o.userData.flash.material.opacity = 1; o.userData.fpt.intensity = 1.8; } };
+  window.__enemyFire = () => { for (const o of Enemies.list) { o.userData.flash.material.opacity = 1; o.userData.fpt.intensity = 4.2; } };
   window.__three = { scene, camera, THREE, cliffs };
   window.__probe = function () {
     const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
