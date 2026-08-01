@@ -734,10 +734,26 @@
   bank(-12, 12, 0x543d26, 0.2);
 
   // Far-bank elevated shelves (give gunslingers different heights)
+  // Organic ledge: a displaced, squashed dome — the box slabs read as straight
+  // rectangles behind the outlaws.
   function shelf(x, z, w, d, h, color) {
-    const geo = new THREE.BoxGeometry(w, h, d);
-    const m = new THREE.Mesh(geo, toon(color, { flatShading: true }));
-    m.position.set(x, h / 2, z); ink(m, 0.0035); shad(m); world.add(m); return m;
+    const geo = new THREE.SphereGeometry(1, 16, 12);
+    const pp = geo.attributes.position, v = new THREE.Vector3();
+    const seed = x * 0.37 + z * 0.11;
+    for (let k = 0; k < pp.count; k++) {
+      v.set(pp.getX(k), pp.getY(k), pp.getZ(k));
+      const dnn = v.clone().normalize();
+      let n = fbm3(dnn.x * 1.9 + seed, dnn.y * 1.4 + seed, dnn.z * 1.9 + seed, 3) - 0.5;
+      n = 0.6 * n + 0.4 * (Math.round(n * 3) / 3);
+      v.multiplyScalar(1 + n * 0.30);
+      v.y = Math.max(v.y, -0.25);            // flatten the buried underside
+      pp.setXYZ(k, v.x, v.y, v.z);
+    }
+    pp.needsUpdate = true; geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, toon(color, { flatShading: false }));
+    m.scale.set(w * 0.62, h * 0.55, d * 0.62);
+    m.position.set(x, h * 0.35, z);
+    ink(m, 0.0035); shad(m); world.add(m); return m;
   }
   // Low far-bank rises the outlaws stand on — NOT tall blocks (the walls are the height).
   shelf(-15, -13, 14, 7, 0.8, 0x4f3a24);
@@ -1012,73 +1028,53 @@
      ========================================================================= */
   const Colt = (function () {
     const grp = new THREE.Group();
-    // Viewmodel uses UNLIT color with per-face shading baked into vertex colors: it sits
-    // inches from the lens where stacked scene lights blow it out, and baking gives exact
-    // control of the plane separation (production rule: "use color to define planes").
-    const VM_LIGHT = new THREE.Vector3(-0.45, 0.78, 0.44).normalize();
-    function bakeFaces(geo, hex) {
-      const g = geo.index ? geo.toNonIndexed() : geo;
-      const pos = g.attributes.position, n = g.attributes.normal;
-      const base = new THREE.Color(hex), col = new THREE.Color();
-      const arr = new Float32Array(pos.count * 3);
-      const nv = new THREE.Vector3();
-      for (let i = 0; i < pos.count; i += 3) {
-        nv.set(n.getX(i), n.getY(i), n.getZ(i));            // flat faces: normal is constant per tri
-        const d = nv.dot(VM_LIGHT);
-        // three hard bands — cel, not a gradient
-        const band = d > 0.45 ? 1.10 : (d > -0.05 ? 0.97 : 0.82);
-        col.copy(base).multiplyScalar(band);
-        for (let k = 0; k < 3; k++) { arr[(i + k) * 3] = col.r; arr[(i + k) * 3 + 1] = col.g; arr[(i + k) * 3 + 2] = col.b; }
-      }
-      g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
-      return g;
-    }
-    const VM_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.45, fog: true });
-    // `flat(hex)` now returns a tag object; geometry gets baked at mesh-build time.
-    const flat = (hex) => ({ __bake: hex });
-    const steel = flat(0x18202c);
-    const steelDark = flat(0x0e141d);
+    // Smooth lit viewmodel — swept and turned forms, no baked box slabs. It sits inches
+    // from the lens; dark albedo keeps it a silhouette against the bright river, and the
+    // camera-mounted kicker supplies the warm top rim.
+    const steelM = new THREE.MeshStandardMaterial({ color: 0x1c2531, roughness: 0.78, metalness: 0.35, fog: false });
+    const steelDarkM = new THREE.MeshStandardMaterial({ color: 0x10161f, roughness: 0.82, metalness: 0.3, fog: false });
+    const woodM = new THREE.MeshStandardMaterial({ color: 0x4a2a12, roughness: 1.0, metalness: 0, fog: false });
+    const gloveM = new THREE.MeshStandardMaterial({ color: 0x3a2a14, roughness: 1.0, metalness: 0, fog: false });
+    const cuffM = new THREE.MeshStandardMaterial({ color: 0x141c2e, roughness: 1.0, metalness: 0, fog: false });
+    const ponchoM = new THREE.MeshStandardMaterial({ color: 0x39411f, roughness: 1.0, metalness: 0, fog: false });
     const steelInk = 0.006;
-    const wood = flat(0x3f2410);
-    const glove = flat(0x33240f);
-    const cuff = flat(0x121a2e);
-    function box(w, h, d, mat, x, y, z, rx, ry, rz) {
-      const m = new THREE.Mesh(bakeFaces(new THREE.BoxGeometry(w, h, d), mat.__bake), VM_MAT);
-      m.position.set(x, y, z); if (rx) m.rotation.x = rx; if (ry) m.rotation.y = ry; if (rz) m.rotation.z = rz;
-      grp.add(m); return m;
-    }
-    const poncho = flat(0x39411f);
-    function cyl(rt, rb, h, seg, mat, x, y, z, rx, rz) {
-      const m = new THREE.Mesh(bakeFaces(new THREE.CylinderGeometry(rt, rb, h, seg), mat.__bake), VM_MAT);
-      m.position.set(x, y, z); if (rx != null) m.rotation.x = rx; if (rz) m.rotation.z = rz;
+    function add(m, x, y, z, rx, ry, rz) {
+      m.position.set(x, y, z);
+      if (rx) m.rotation.x = rx; if (ry) m.rotation.y = ry; if (rz) m.rotation.z = rz;
       grp.add(m); return m;
     }
     // --- Colt Peacemaker, barrel forward (-z) ---
-    const barrel = cyl(0.036, 0.038, 0.66, 10, steel, 0, 0.035, -0.40, Math.PI / 2); ink(barrel, steelInk);
-    cyl(0.020, 0.020, 0.44, 8, steelDark, 0, -0.012, -0.34, Math.PI / 2);  // ejector rod housing
-    const cylinder = cyl(0.072, 0.072, 0.19, 12, steel, 0, 0.012, -0.02, Math.PI / 2); ink(cylinder, steelInk);
-    const frame = box(0.088, 0.135, 0.30, steel, 0, 0.005, 0.06); ink(frame, steelInk);
-    box(0.026, 0.045, 0.05, steel, 0, 0.10, 0.20);                          // hammer spur
-    box(0.016, 0.026, 0.02, steel, 0, 0.085, -0.70);                        // front sight
-    // trigger guard + trigger
-    const guard = new THREE.Mesh(bakeFaces(new THREE.TorusGeometry(0.055, 0.012, 6, 10, Math.PI * 1.15), steelDark.__bake), VM_MAT);
-    guard.rotation.y = Math.PI / 2; guard.rotation.z = -0.35; guard.position.set(0, -0.085, 0.10); grp.add(guard);
-    box(0.014, 0.05, 0.016, steel, 0, -0.055, 0.10);
-    // grip: angled back, walnut, with a steel backstrap
-    const grip = box(0.078, 0.27, 0.115, wood, 0, -0.20, 0.235, 0.42); ink(grip, steelInk);
-    box(0.086, 0.10, 0.13, steelDark, 0, -0.075, 0.185, 0.42);              // frame/grip strap
-    // --- Jody's gloved hand on the grip ---
-    const palm = box(0.115, 0.175, 0.155, glove, 0.005, -0.165, 0.245, 0.42); ink(palm, 0.005);
-    box(0.125, 0.055, 0.10, glove, 0.0, -0.055, 0.145, 0.15);               // fingers curling to trigger
-    box(0.125, 0.048, 0.085, glove, 0.0, -0.105, 0.135, 0.15);
-    box(0.062, 0.075, 0.10, glove, -0.055, -0.075, 0.215, 0.30);            // thumb along the frame
-    // --- forearm entering from the bottom-right corner ---
-    // Everything MUST stay in front of the camera's near plane. The old poncho cape sat at
-    // camera-space z ~ +0.01 (i.e. behind the lens) and rendered as a clipped white block.
-    const wrist = box(0.150, 0.150, 0.15, glove, 0.025, -0.250, 0.20, 0.45); ink(wrist, 0.005);
-    const sleeve = box(0.185, 0.185, 0.26, cuff, 0.055, -0.340, 0.34, 0.45); ink(sleeve, 0.005);
-    const cuffBand = box(0.205, 0.075, 0.10, poncho, 0.048, -0.300, 0.27, 0.45);   // olive poncho cuff
-    ink(cuffBand, 0.005);
+    const barrel = add(new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.037, 0.66, 14), steelM), 0, 0.035, -0.40, Math.PI / 2); ink(barrel, steelInk);
+    add(new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.42, 10), steelDarkM), 0, -0.014, -0.33, Math.PI / 2);  // ejector housing
+    const cylinder = add(new THREE.Mesh(new THREE.CylinderGeometry(0.070, 0.070, 0.185, 16), steelM), 0, 0.012, -0.02, Math.PI / 2); ink(cylinder, steelInk);
+    for (let i = 0; i < 6; i++) {   // chamber flutes read as a revolver at a glance
+      const a = (i / 6) * Math.PI * 2;
+      add(new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.19, 6), steelDarkM), Math.cos(a) * 0.062, 0.012 + Math.sin(a) * 0.062, -0.02, Math.PI / 2);
+    }
+    // frame: rounded mass + topstrap over the cylinder
+    const frame = add(blob(steelM, 0.048, 0.070, 0.16, 12), 0, 0.005, 0.06); ink(frame, steelInk);
+    add(new THREE.Mesh(new THREE.CylinderGeometry(0.020, 0.020, 0.30, 8), steelM), 0, 0.085, 0.02, Math.PI / 2);
+    add(blob(steelM, 0.016, 0.030, 0.028, 8), 0, 0.108, 0.185, -0.5);       // hammer spur
+    add(blob(steelM, 0.010, 0.018, 0.012, 6), 0, 0.082, -0.71);             // front sight
+    const guard = add(new THREE.Mesh(new THREE.TorusGeometry(0.052, 0.011, 8, 14, Math.PI * 1.2), steelDarkM), 0, -0.082, 0.10);
+    guard.rotation.y = Math.PI / 2; guard.rotation.z = -0.35;
+    // plow-handle grip: a swept curve, not a slab
+    const grip = add(limb(woodM, [[0, -0.03, 0.16], [0, -0.115, 0.215], [0, -0.20, 0.255], [0, -0.275, 0.262]],
+      [0.040, 0.045, 0.046, 0.034], 10), 0, 0, 0); ink(grip, steelInk);
+    // --- Jody's gloved hand: palm, wrapped fingers, thumb along the frame ---
+    const palm = add(blob(gloveM, 0.062, 0.088, 0.078, 12), 0.014, -0.15, 0.235, 0, 0, 0.15); ink(palm, 0.005);
+    add(limb(gloveM, [[0.035, -0.052, 0.15], [-0.012, -0.042, 0.128], [-0.046, -0.06, 0.142]], [0.019, 0.018, 0.014], 7), 0, 0, 0);
+    add(limb(gloveM, [[0.048, -0.098, 0.205], [-0.018, -0.082, 0.165], [-0.046, -0.10, 0.192]], [0.021, 0.020, 0.015], 7), 0, 0, 0);
+    add(limb(gloveM, [[0.048, -0.134, 0.228], [-0.014, -0.122, 0.192], [-0.042, -0.14, 0.216]], [0.020, 0.019, 0.014], 7), 0, 0, 0);
+    add(limb(gloveM, [[-0.028, -0.088, 0.285], [-0.052, -0.068, 0.225], [-0.046, -0.058, 0.172]], [0.019, 0.018, 0.014], 7), 0, 0, 0);
+    // --- forearm sweeping in from the bottom-right, sleeve + poncho cuff ---
+    // (kept well in front of the near plane — a box here once sat behind the lens and
+    // rendered as a clipped white block)
+    add(blob(gloveM, 0.060, 0.055, 0.062, 10), 0.010, -0.20, 0.20);          // wrist
+    const fore = add(limb(cuffM, [[0.02, -0.235, 0.205], [0.05, -0.315, 0.33], [0.095, -0.42, 0.50]],
+      [0.060, 0.076, 0.094], 12), 0, 0, 0); ink(fore, 0.005);
+    const cuffB = add(new THREE.Mesh(new THREE.TorusGeometry(0.084, 0.022, 8, 16), ponchoM), 0.052, -0.318, 0.335);
+    cuffB.rotation.x = 1.08; ink(cuffB, 0.005);
 
     // muzzle flash + smoke anchor
     const flash = new THREE.Mesh(new THREE.PlaneGeometry(0.30, 0.30), new THREE.MeshBasicMaterial({ map: TEX.flash, color: 0xffd9a0, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
@@ -1088,7 +1084,7 @@
     grp.position.set(0.235, -0.175, -0.52);
     grp.rotation.y = -0.17; grp.rotation.z = 0.05; grp.rotation.x = 0.05;
     grp.scale.setScalar(0.74);
-    const kicker = new THREE.PointLight(0xffc98a, 1.5, 2.2, 2.0);
+    const kicker = new THREE.PointLight(0xffc98a, 0.55, 3.0, 1.2);
     kicker.position.set(-0.55, 0.75, -0.35); camera.add(kicker);
     camera.add(grp); scene.add(camera);
 
@@ -1153,6 +1149,20 @@
       const c = (RS + 1) * i + j, d = (RS + 1) * (i - 1) + j;
       index.push(a, b, d, b, c, d);
     }
+    // CAP THE ENDS. Open tubes read as holes — the bright background shines through the
+    // bore and the ink shell rings it, which looked like glowing "eyes" on the limbs.
+    // Fans are added with both windings so a cap is solid from every view angle.
+    const t0 = curve.getTangentAt(0), t1 = curve.getTangentAt(1);
+    const pStart = curve.getPointAt(0), pEnd = curve.getPointAt(1);
+    const cs = position.length / 3;
+    position.push(pStart.x, pStart.y, pStart.z); normal.push(-t0.x, -t0.y, -t0.z);
+    const ce = position.length / 3;
+    position.push(pEnd.x, pEnd.y, pEnd.z); normal.push(t1.x, t1.y, t1.z);
+    for (let j = 0; j < RS; j++) {
+      index.push(cs, j, j + 1); index.push(cs, j + 1, j);
+      const base = (RS + 1) * TS;
+      index.push(ce, base + j, base + j + 1); index.push(ce, base + j + 1, base + j);
+    }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(position, 3));
     g.setAttribute('normal', new THREE.Float32BufferAttribute(normal, 3));
@@ -1166,6 +1176,9 @@
   function blob(mat, rx, ry, rz, detail) {
     const g = new THREE.SphereGeometry(1, detail || 16, (detail || 16) * 0.7);
     g.scale(rx, ry, rz);
+    // geometry.scale() leaves the unit-sphere normals untouched, so non-uniform blobs
+    // lit with them grow a false hot "pole" facing the light. Recompute after scaling.
+    g.computeVertexNormals();
     return new THREE.Mesh(g, mat);
   }
   function lathe(profile, seg, mat) {
