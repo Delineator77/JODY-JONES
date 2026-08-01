@@ -3,7 +3,9 @@ node_modules/
 package-lock.json
 
 # Transient render captures from the Gauntlet Loop critics
+# (nested too — critic rounds capture into shots/round1/, shots/round2/, ...)
 shots/*.png
+shots/**/*.png
 tools/webgl_test.html
 
 # OS
