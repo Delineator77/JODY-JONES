@@ -60,7 +60,7 @@
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(COL.deep);
-  scene.fog = new THREE.FogExp2(0x1a2740, 0.006);   // light canyon haze — never washes the hero wall
+  scene.fog = new THREE.FogExp2(0x33344f, 0.0115);  // aerial perspective: distance lifts + desaturates
 
   const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.05, 900);
   const CAM_BASE = new THREE.Vector3(0, 1.9, 8.0);   // standing behind the boulder, looking over it
@@ -932,6 +932,7 @@
       o.userData.flash.material.opacity = 1; o.userData.flash.material.rotation = rnd(0, 6.28);
       o.userData.fpt.intensity = 1.8;
       Audio.enemyShot(o.position);
+      Puffs.spawn(o.position.x - 0.8, o.position.y + 1.35, o.position.z + 0.3, 0x9aa7c0, 2);
       // a near-miss on the player: chip the boulder + whistle + nerve hit
       if (Math.random() < 0.6) NearMiss.trigger();
     }
@@ -1035,7 +1036,7 @@
         s.position.set(x + rnd(-0.3, 0.3), y + rnd(-0.2, 0.2), z + rnd(-0.3, 0.3));
         const sc = rnd(0.5, 1.4); s.scale.setScalar(sc);
         s.material.opacity = rnd(0.35, 0.6);
-        s.userData = { vy: rnd(0.1, 0.4), vx: rnd(-0.05, 0.25), grow: rnd(0.3, 0.8), life: rnd(3, 6), age: 0 };
+        s.userData = { vy: rnd(0.05, 0.22), vx: rnd(-0.04, 0.20), grow: rnd(0.22, 0.55), life: rnd(11, 20), age: 0 };
         scene.add(s); items.push(s);
       }
     }
@@ -1044,7 +1045,7 @@
         const s = items[i], u = s.userData; u.age += dt;
         s.position.y += u.vy * dt; s.position.x += u.vx * dt;
         s.scale.addScalar(u.grow * dt);
-        s.material.opacity = Math.max(0, s.material.opacity - dt * 0.12);
+        s.material.opacity = Math.max(0, s.material.opacity - dt * 0.028);
         if (u.age > u.life || s.material.opacity <= 0.01) { scene.remove(s); items.splice(i, 1); }
       }
     }
@@ -1061,6 +1062,37 @@
       s.scale.setScalar(rnd(6, 14)); s.material.opacity = rnd(0.04, 0.1);
       s.userData = { vx: rnd(0.05, 0.2), ph: rnd(0, 6.28) };
       scene.add(s); haze.push(s);
+    }
+  })();
+
+  /* ----- AERIAL DEPTH: horizontal mist sheets between the picture planes ---------
+     Illustrations get their depth from stacked, separated layers rather than uniform
+     fog. These low sheets sit at fixed depths so the far bank, the mid river and the
+     foreground cover each read as a distinct plane. --------------------------------- */
+  const mistBands = [];
+  (function mistLayers() {
+    const c = document.createElement('canvas'); c.width = 8; c.height = 128;
+    const x = c.getContext('2d');
+    const g = x.createLinearGradient(0, 128, 0, 0);
+    g.addColorStop(0.0, 'rgba(255,255,255,0.95)');
+    g.addColorStop(0.35, 'rgba(255,255,255,0.55)');
+    g.addColorStop(1.0, 'rgba(255,255,255,0)');
+    x.fillStyle = g; x.fillRect(0, 0, 8, 128);
+    const tex = new THREE.CanvasTexture(c);
+    // [z, y, height, width, colour, opacity]
+    const layers = [
+      [-31, 0.3, 7.0, 160, 0xe0925a, 0.52],   // warm haze hugging the far bank
+      [-23, 0.1, 5.4, 150, 0xc07c58, 0.40],
+      [-13, 0.0, 3.8, 140, 0x74849f, 0.30],   // cool mid-river mist
+      [-4, -0.1, 2.6, 130, 0x4a5c85, 0.22],
+    ];
+    for (const L of layers) {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(L[3], L[2]),
+        new THREE.MeshBasicMaterial({ map: tex, color: L[4], transparent: true, opacity: L[5], depthWrite: false, fog: false }));
+      m.position.set(0, L[1] + L[2] / 2, L[0]);
+      m.renderOrder = 3;
+      m.userData = { base: L[5], ph: rnd(0, 6.28) };
+      scene.add(m); mistBands.push(m);
     }
   })();
 
@@ -1244,6 +1276,11 @@
     if (ammo <= 0) { Audio.dry(); dom.reloadTag.classList.add('show'); return; }
     ammo--; updateRounds();
     Colt.fireFX(); Audio.colt();
+    (function muzzleSmoke() {
+      const d = new THREE.Vector3(); camera.getWorldDirection(d);
+      const o = camera.position.clone().addScaledVector(d, 1.5).add(new THREE.Vector3(0.25, -0.25, 0));
+      Puffs.spawn(o.x, o.y, o.z, 0x93a2bd, 3);
+    })();
     shake += 0.18; tremor.set(rnd(-0.02, 0.02), rnd(-0.02, 0.02));
     // ray from camera center
     const ray = new THREE.Raycaster();
@@ -1330,6 +1367,7 @@
     for (const r of reeds) { r.rotation.z = Math.sin(clock * 1.6 + r.userData.phase) * 0.18; }
     // haze drift
     for (const h of haze) { h.position.x += h.userData.vx * dt; if (h.position.x > 34) h.position.x = -34; h.material.opacity = Math.min(0.14, h.material.opacity + dt * 0.001); }
+    for (const m of mistBands) { const u = m.userData; m.material.opacity = u.base * (0.82 + 0.18 * Math.sin(clock * 0.25 + u.ph)); }
     // clouds drift slowly across the sky strip
     for (const c of clouds) { c.position.x += c.userData.vx * dt; if (c.position.x > 70) c.position.x = -70; }
     // birds circle
@@ -1367,6 +1405,7 @@
   // debug hook for headless smoke tests
   window.__dbg = { yaw: () => player.yaw, pitch: () => player.pitch, ammo: () => ammo, puffs: () => Puffs.count(), enemies: () => Enemies.list.length };
   window.__fire = () => fire();
+  window.__reload = () => { ammo = 6; updateRounds(); };
   window.__enemyFire = () => { for (const o of Enemies.list) { o.userData.flash.material.opacity = 1; o.userData.fpt.intensity = 1.8; } };
   window.__three = { scene, camera, THREE, cliffs };
   window.__probe = function () {
