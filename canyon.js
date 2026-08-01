@@ -250,6 +250,7 @@
 
   // Clip-space inverted-hull ink outline — uniform screen-width navy line.
   const inkMats = [];
+  const flashLights = [];   // transient muzzle/glow lights, culled from shading while dark
   function inkMaterial(px, color) {
     const m = new THREE.ShaderMaterial({
       uniforms: { uColor: { value: new THREE.Color(color == null ? COL.ink : color) }, uThick: { value: px }, uAspect: { value: innerWidth / innerHeight } },
@@ -382,7 +383,7 @@
   // DIRECTION (not per-vertex random), so the duplicated verts of a non-indexed
   // icosahedron stay welded — random jitter tore them into glass shards.
   function rockGeo(radius, squashY, jitter, seed) {
-    const g = new THREE.IcosahedronGeometry(radius, 3);
+    const g = new THREE.IcosahedronGeometry(radius, 2);
     const p = g.attributes.position;
     const s = seed == null ? rnd(0, 40) : seed;
     const v = new THREE.Vector3();
@@ -413,7 +414,7 @@
     m.material.flatShading = true;
     m.material.needsUpdate = true;
     m.castShadow = true; m.receiveShadow = true;
-    if (opts.ink !== false) ink(m, opts.ink || 0.004);
+    if (opts.ink) ink(m, opts.ink);
     return m;
   }
 
@@ -429,7 +430,7 @@
   const sun = new THREE.DirectionalLight(TOD.key, TOD.keyIntensity);
   sun.position.set(TOD.keyPos[0], TOD.keyPos[1], TOD.keyPos[2]);  // high, clears the canyon rim
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.set(1024, 1024);
   const sc = sun.shadow.camera;
   sc.left = -70; sc.right = 70; sc.top = 56; sc.bottom = -30; sc.near = 1; sc.far = 220;
   sun.shadow.bias = -0.0016; sun.shadow.normalBias = 0.045;
@@ -548,11 +549,11 @@
   const FLOOR = -2.4;   // canyon floor / waterline height
   const cliffs = new THREE.Group();
   // Far wall closing the canyon behind the enemies — capped so a warm sky strip reads above.
-  cliffs.add(buildCliff(210, 30, 40, new THREE.Vector3(0, FLOOR, -34), 0, 5));
+  cliffs.add(buildCliff(360, 30, 64, new THREE.Vector3(0, FLOOR, -32), 0, 5));
   // Side walls: brought in so they rise on the left/right BEHIND the far bank, leaving a
   // central sky gap (the canyon opening) — the gang-on-the-bank composition.
-  cliffs.add(buildCliff(150, 102, 17, new THREE.Vector3(-44, FLOOR, -4), Math.PI / 2 + 0.05, 12, { warm: 0.5 }));  // left wall catches the sun
-  cliffs.add(buildCliff(150, 102, 17, new THREE.Vector3(44, FLOOR, -4), -Math.PI / 2 - 0.05, 12, { warm: -0.15 }));// right wall shadowed
+  cliffs.add(buildCliff(64, 96, 8, new THREE.Vector3(-172, FLOOR, -2), Math.PI / 2 + 0.05, 12, { warm: 0.5 }));   // WEST end cap (the start at your back)
+  cliffs.add(buildCliff(64, 96, 8, new THREE.Vector3(172, FLOOR, -2), -Math.PI / 2 - 0.05, 12, { warm: -0.15 })); // EAST end cap (the goal)
 
   // NEAR WALLS — the enclosure. These start beside/behind the player and run tall enough
   // to exit the top of frame, cropping the left and right edges so the camera is inside a
@@ -560,11 +561,7 @@
   // shadows: physically they'd black out the whole gorge, and the key must still reach
   // the far wall. Depth layering (near = darkest/coolest) does the rest.
   const nearWalls = new THREE.Group();
-  nearWalls.add(buildCliff(64, 150, 7, new THREE.Vector3(-25, FLOOR, 16), Math.PI / 2 + 0.30, 14, { warm: -0.42 }));
-  nearWalls.add(buildCliff(64, 150, 7, new THREE.Vector3(25, FLOOR, 16), -Math.PI / 2 - 0.30, 14, { warm: -0.46 }));
-  // a second, slightly further pair so the recession steps rather than jumps
-  nearWalls.add(buildCliff(58, 112, 7, new THREE.Vector3(-33, FLOOR, 0), Math.PI / 2 + 0.16, 13, { warm: -0.30 }));
-  nearWalls.add(buildCliff(58, 112, 7, new THREE.Vector3(33, FLOOR, 0), -Math.PI / 2 - 0.16, 13, { warm: -0.34 }));
+  nearWalls.add(buildCliff(360, 64, 52, new THREE.Vector3(0, FLOOR, 30), Math.PI, 10, { warm: -0.34 }));  // SOUTH spine at the player's back
   nearWalls.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = true; } });
   cliffs.add(nearWalls);
   scene.add(cliffs);
@@ -654,7 +651,7 @@
      ========================================================================= */
   const riverUniforms = { uTime: { value: 0 }, uSun: { value: new THREE.Color(TOD.river) } };
   (function river() {
-    const g = new THREE.PlaneGeometry(200, 15, 120, 24);
+    const g = new THREE.PlaneGeometry(360, 15, 200, 24);
     g.rotateX(-Math.PI / 2);
     const mat = new THREE.ShaderMaterial({
       fog: true, uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, riverUniforms]),
@@ -706,7 +703,7 @@
 
   // Dark waterline strip / wet shelf to seat the banks graphically.
   (function waterline() {
-    const g = new THREE.PlaneGeometry(200, 3); g.rotateX(-Math.PI / 2);
+    const g = new THREE.PlaneGeometry(360, 3); g.rotateX(-Math.PI / 2);
     const m = new THREE.MeshBasicMaterial({ color: COL.rockWet, transparent: true, opacity: 0.5, fog: true });
     const near = new THREE.Mesh(g, m); near.position.set(0, 0.05, 4.2); scene.add(near);
   })();
@@ -717,7 +714,7 @@
   const world = new THREE.Group(); scene.add(world);
 
   function bank(zCenter, zDepth, color, y) {
-    const g = new THREE.PlaneGeometry(200, zDepth, 60, 8); g.rotateX(-Math.PI / 2);
+    const g = new THREE.PlaneGeometry(360, zDepth, 100, 8); g.rotateX(-Math.PI / 2);
     const p = g.attributes.position;
     for (let i = 0; i < p.count; i++) {
       const x = p.getX(i), z = p.getZ(i);
@@ -756,29 +753,43 @@
     ink(m, 0.0035); shad(m); world.add(m); return m;
   }
   // Low far-bank rises the outlaws stand on — NOT tall blocks (the walls are the height).
-  shelf(-15, -13, 14, 7, 0.8, 0x4f3a24);
-  shelf(10, -15, 16, 8, 1.3, 0x5d3320);
-  shelf(1, -18, 13, 7, 1.0, 0x4f3a24);
+  shelf(-113, -12.5, 14, 7, 0.8, 0x4f3a24);
+  shelf(-8, -13.5, 16, 8, 1.3, 0x5d3320);
+  shelf(126, -12.8, 13, 7, 1.0, 0x4f3a24);
+  shelf(63, -14, 13, 7, 4.6, 0x5d3320);   // Crow's overwatch ledge above the Narrows
 
   // Scatter cover rocks along both banks + in the river.
   const riverRocks = [];
   function scatterRocks() {
-    const nearSpots = [[-9, 4.4, 1.1], [7, 4.0, 1.0], [-3, 3.4, 0.8], [12, 5.0, 1.3]];
-    for (const s of nearSpots) {
-      const r = makeRock(s[2], toon(0x101a2c, { flatShading: true, roughness: 0.6 }), { squashY: 0.62 });
-      r.position.set(s[0], s[2] * 0.4, s[1]); world.add(r);
+    // south-bank cover chain — a boulder every 13-21 units for the whole run, so there is
+    // always a next rock to sprint to (the traversal rhythm of the level)
+    for (let x = -152; x <= 152; x += rnd(13, 21)) {
+      const rr = rnd(1.0, 2.0);
+      const r = makeRock(rr, toon(0x101a2c, { flatShading: true, roughness: 0.6 }), { squashY: 0.62 });
+      r.position.set(x + rnd(-2, 2), rr * 0.38, rnd(4.0, 6.4)); world.add(r);
     }
     // river boulders
-    for (let i = 0; i < 9; i++) {
+    for (let i = 0; i < 34; i++) {
       const rr = rnd(0.4, 1.1);
       const r = makeRock(rr, toon(0x14203a, { flatShading: true, roughness: 0.55 }), { squashY: 0.5 });
-      r.position.set(rnd(-24, 24), rr * 0.18, rnd(-6, 2)); world.add(r); riverRocks.push(r);
+      r.position.set(rnd(-150, 150), rr * 0.18, rnd(-6, 2)); world.add(r); riverRocks.push(r);
     }
-    // far-bank cover boulders
-    const farSpots = [[-18, -8, 1.3], [-8, -9, 1.1], [2, -9.5, 1.2], [13, -9, 1.4], [21, -10, 1.2]];
-    for (const s of farSpots) {
-      const r = makeRock(s[2], toon(COL.rockMid, { flatShading: true }), { squashY: 0.75 });
-      r.position.set(s[0], s[2] * 0.5, s[1]); world.add(r);
+    // far-bank cover boulders, clustered around the enemy pockets
+    const farXs = [-128, -117, -108, -26, -14, -2, 8, 118, 130, 144, -62, 34, 92, -88];
+    for (const fx of farXs) {
+      const rr = rnd(1.0, 1.5);
+      const r = makeRock(rr, toon(COL.rockMid, { flatShading: true }), { squashY: 0.75 });
+      r.position.set(fx + rnd(-3, 3), rr * 0.5, rnd(-10, -8)); world.add(r);
+    }
+    // FORDS — pale shallow bars crossing the river: the two crossings of The Run
+    for (const fx of [-60, 115]) {
+      const bar = blob(toonSoft(0x8a6f4a, { flatShading: false }), 8.0, 0.42, 6.0, 14);
+      bar.position.set(fx, 0.02, -1.2); bar.receiveShadow = true; world.add(bar);
+    }
+    // THE NARROWS — big masses jut in from both banks at x ~ 64, pinching the corridor
+    for (const nn of [[59, -8.5, 5.5, 1.5], [70, -6.0, 4.2, 1.2], [57, 12.5, 5.0, 1.3], [69, 14.5, 6.0, 1.6]]) {
+      const m = makeRock(nn[2], toon(0x8a4d2c, { flatShading: true }), { squashY: nn[3] });
+      m.position.set(nn[0], nn[2] * 0.42, nn[1]); world.add(m);
     }
   }
   scatterRocks();
@@ -807,18 +818,18 @@
 
   // Break up the far bank's straight waterline with rubble, so it stops reading as a slab.
   (function bankRubble() {
-    for (let i = 0; i < 22; i++) {
+    for (let i = 0; i < 70; i++) {
       const rr = rnd(0.30, 0.95);
       const m = makeRock(rr, toon(new THREE.Color(i % 3 === 0 ? 0x7d4527 : 0x8f5330).multiply(new THREE.Color(TOD.rockTint)).getHex(), { flatShading: true }), { squashY: 0.55 });
-      m.position.set(rnd(-30, 30), rnd(0.05, 0.35), rnd(-8.4, -6.2));
+      m.position.set(rnd(-155, 155), rnd(0.05, 0.35), rnd(-8.4, -6.2));
       m.rotation.y = rnd(0, 6.28);
       world.add(m);
     }
     // a few larger blocks sitting proud of the bank edge
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < 20; i++) {
       const rr = rnd(0.9, 1.7);
       const m = makeRock(rr, toon(new THREE.Color(0x8a4d2c).multiply(new THREE.Color(TOD.rockTint)).getHex(), { flatShading: true }), { squashY: 0.7 });
-      m.position.set(rnd(-28, 28), rnd(0.3, 0.9), rnd(-10.5, -8.5));
+      m.position.set(rnd(-152, 152), rnd(0.3, 0.9), rnd(-10.5, -8.5));
       m.rotation.y = rnd(0, 6.28);
       world.add(m);
     }
@@ -829,13 +840,13 @@
   (function makeReeds() {
     const rmat = toonSoft(COL.reed, { side: THREE.DoubleSide, transparent: true });
     // small backlit grass clumps along the near bank edges — never blocking the view
-    for (let i = 0; i < 26; i++) {
+    for (let i = 0; i < 72; i++) {
       const h = rnd(0.28, 0.6);
       const g = new THREE.PlaneGeometry(0.05, h, 1, 3);
       g.translate(0, h / 2, 0);
       const m = new THREE.Mesh(g, rmat);
       const side = i % 2 ? 1 : -1;
-      m.position.set(side * rnd(3.5, 16), 0.05, rnd(2.6, 4.4));
+      m.position.set(side * rnd(3.5, 152), 0.05, rnd(2.6, 4.4));
       m.rotation.y = rnd(0, Math.PI);
       m.userData.h = h; m.userData.phase = rnd(0, 6.28);
       world.add(m); reeds.push(m);
@@ -844,11 +855,11 @@
 
   // A little driftwood
   (function driftwood() {
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 14; i++) {
       const g = new THREE.CylinderGeometry(0.08, 0.11, rnd(1.4, 2.6), 6);
       const m = new THREE.Mesh(g, toon(COL.wood, { flatShading: true }));
       m.rotation.z = Math.PI / 2; m.rotation.y = rnd(0, Math.PI);
-      m.position.set(rnd(-18, 18), 0.14, rnd(2.5, 5.5)); ink(m, 0.003); world.add(m);
+      m.position.set(rnd(-150, 150), 0.14, rnd(2.5, 5.5)); ink(m, 0.003); world.add(m);
     }
   })();
 
@@ -971,7 +982,7 @@
     const coltFlash = new THREE.Mesh(new THREE.PlaneGeometry(0.55, 0.55), new THREE.MeshBasicMaterial({
       map: TEX.flash, color: 0xffd9a0, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
     coltFlash.position.set(0.86, 1.49, -1.12); g.add(coltFlash);
-    const coltLight = new THREE.PointLight(0xffa848, 0, 8); coltLight.position.set(0.86, 1.50, -1.18); g.add(coltLight);
+    const coltLight = new THREE.PointLight(0xffa848, 0, 8); coltLight.position.set(0.86, 1.50, -1.18); coltLight.visible = false; flashLights.push(coltLight); g.add(coltLight);
 
     // --- HEAD: spheroid skull tapering to a jaw, blond hair over the collar ---
     g.add(limb(skinM, [[0, 1.52, 0], [0, 1.62, -0.01]], [0.078, 0.070], 10));   // neck
@@ -1000,9 +1011,9 @@
     // hair, skin, poncho and gun into one value. A dedicated short-throw warm key (the
     // standard film fix) separates them without touching the environment's lighting.
     const charKey = new THREE.PointLight(0xffc98a, 3.6, 5.0, 2.0);
-    charKey.position.set(-1.5, 3.0, -1.4); g.add(charKey);
+    charKey.position.set(-1.5, 3.0, -1.4); charKey.visible = false; g.add(charKey);
     const charFill = new THREE.PointLight(0x8fb0e8, 1.5, 4.2, 2.0);
-    charFill.position.set(1.7, 1.6, 1.5); g.add(charFill);
+    charFill.position.set(1.7, 1.6, 1.5); charFill.visible = false; g.add(charFill);
 
     g.position.set(0.6, -0.55, 6.4);
     g.rotation.y = 0.34;                // turned so the extended gun arm clears his outline
@@ -1011,6 +1022,7 @@
     scene.add(g);
     return {
       group: g, flash: coltFlash, light: coltLight,
+      charLights(on) { charKey.visible = on; charFill.visible = on; },
       fireFX() { coltFlash.material.opacity = 1; coltFlash.material.rotation = rnd(0, 6.28); coltLight.intensity = 6; },
       update(dt) {
         if (coltFlash.material.opacity > 0) {
@@ -1028,62 +1040,70 @@
      ========================================================================= */
   const Colt = (function () {
     const grp = new THREE.Group();
-    // Smooth lit viewmodel — swept and turned forms, no baked box slabs. It sits inches
-    // from the lens; dark albedo keeps it a silhouette against the bright river, and the
-    // camera-mounted kicker supplies the warm top rim.
-    const steelM = new THREE.MeshStandardMaterial({ color: 0x1c2531, roughness: 0.78, metalness: 0.35, fog: false });
-    const steelDarkM = new THREE.MeshStandardMaterial({ color: 0x10161f, roughness: 0.82, metalness: 0.3, fog: false });
-    const woodM = new THREE.MeshStandardMaterial({ color: 0x6b3a16, roughness: 1.0, metalness: 0, fog: false });
-    const gloveM = new THREE.MeshStandardMaterial({ color: 0x6a4a26, roughness: 1.0, metalness: 0, fog: false });
-    const cuffM = new THREE.MeshStandardMaterial({ color: 0x141c2e, roughness: 1.0, metalness: 0, fog: false });
-    const ponchoM = new THREE.MeshStandardMaterial({ color: 0x39411f, roughness: 1.0, metalness: 0, fog: false });
-    const steelInk = 0.006;
+    // Rebuilt against the hand-drawn reference: Colt held low-right, barrel angled up and
+    // inward, deep-fluted cylinder, cocked hammer, walnut butt showing under the fist,
+    // chunky leather glove with the thumb hooked over the back, olive sleeve with a
+    // patterned band. Matte materials (spec highlights read as sticker-dots in the style).
+    const steelM = new THREE.MeshStandardMaterial({ color: 0x2b3340, roughness: 0.7, metalness: 0.35, fog: false });
+    const steelDarkM = new THREE.MeshStandardMaterial({ color: 0x161c26, roughness: 0.75, metalness: 0.3, fog: false });
+    const walnutM = new THREE.MeshStandardMaterial({ color: 0x5a3014, roughness: 1.0, metalness: 0, fog: false });
+    const gloveM = new THREE.MeshStandardMaterial({ color: 0x4e2c15, roughness: 1.0, metalness: 0, fog: false });
+    const gloveDarkM = new THREE.MeshStandardMaterial({ color: 0x38200e, roughness: 1.0, metalness: 0, fog: false });
+    const sleeveM = new THREE.MeshStandardMaterial({ color: 0x565b2e, roughness: 1.0, metalness: 0, fog: false });
+    const bandM = new THREE.MeshStandardMaterial({ color: 0xa98753, roughness: 1.0, metalness: 0, fog: false });
     function add(m, x, y, z, rx, ry, rz) {
       m.position.set(x, y, z);
       if (rx) m.rotation.x = rx; if (ry) m.rotation.y = ry; if (rz) m.rotation.z = rz;
       grp.add(m); return m;
     }
-    // --- Colt Peacemaker, barrel forward (-z) ---
-    const barrel = add(new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.037, 0.66, 14), steelM), 0, 0.035, -0.40, Math.PI / 2); ink(barrel, steelInk);
-    add(new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.42, 10), steelDarkM), 0, -0.014, -0.33, Math.PI / 2);  // ejector housing
-    const cylinder = add(new THREE.Mesh(new THREE.CylinderGeometry(0.070, 0.070, 0.185, 16), steelM), 0, 0.012, -0.02, Math.PI / 2); ink(cylinder, steelInk);
-    for (let i = 0; i < 6; i++) {   // chamber flutes read as a revolver at a glance
-      const a = (i / 6) * Math.PI * 2;
-      add(new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.19, 6), steelDarkM), Math.cos(a) * 0.062, 0.012 + Math.sin(a) * 0.062, -0.02, Math.PI / 2);
+    // --- the Colt, barrel forward (-z) ---
+    const barrel = add(new THREE.Mesh(new THREE.CylinderGeometry(0.021, 0.024, 0.64, 12), steelM), 0, 0.030, -0.39, Math.PI / 2); ink(barrel, 0.006);
+    add(new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.030, 0.030), steelM), 0, 0.062, -0.69);          // front sight blade
+    add(new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.30, 8), steelDarkM), 0.024, 0.002, -0.28, Math.PI / 2);  // ejector housing
+    const cyl = add(new THREE.Mesh(new THREE.CylinderGeometry(0.060, 0.060, 0.150, 14), steelM), 0, 0.004, -0.035, Math.PI / 2); ink(cyl, 0.006);
+    for (let i = 0; i < 6; i++) {                                    // deep flutes — the revolver read
+      const a = (i / 6) * Math.PI * 2 + 0.3;
+      add(new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.152, 6), steelDarkM),
+        Math.cos(a) * 0.052, 0.004 + Math.sin(a) * 0.052, -0.035, Math.PI / 2);
     }
-    // frame: rounded mass + topstrap over the cylinder
-    const frame = add(blob(steelM, 0.046, 0.052, 0.155, 12), 0, 0.0, 0.06); ink(frame, steelInk);
-    add(new THREE.Mesh(new THREE.CylinderGeometry(0.020, 0.020, 0.30, 8), steelM), 0, 0.085, 0.02, Math.PI / 2);
-    add(blob(steelM, 0.016, 0.030, 0.028, 8), 0, 0.108, 0.185, -0.5);       // hammer spur
-    add(blob(steelM, 0.010, 0.018, 0.012, 6), 0, 0.082, -0.71);             // front sight
-    const guard = add(new THREE.Mesh(new THREE.TorusGeometry(0.052, 0.011, 8, 14, Math.PI * 1.2), steelDarkM), 0, -0.082, 0.10);
-    guard.rotation.y = Math.PI / 2; guard.rotation.z = -0.35;
-    // plow-handle grip: a swept curve, not a slab
-    const grip = add(limb(woodM, [[0, -0.03, 0.16], [0, -0.115, 0.215], [0, -0.20, 0.255], [0, -0.275, 0.262]],
-      [0.040, 0.045, 0.046, 0.034], 10), 0, 0, 0); ink(grip, steelInk);
-    // --- Jody's gloved hand: palm, wrapped fingers, thumb along the frame ---
-    const palm = add(blob(gloveM, 0.052, 0.070, 0.066, 12), 0.014, -0.145, 0.235, 0, 0, 0.15); ink(palm, 0.005);
-    add(limb(gloveM, [[0.035, -0.052, 0.15], [-0.012, -0.042, 0.128], [-0.046, -0.06, 0.142]], [0.019, 0.018, 0.014], 7), 0, 0, 0);
-    add(limb(gloveM, [[0.048, -0.098, 0.205], [-0.018, -0.082, 0.165], [-0.046, -0.10, 0.192]], [0.021, 0.020, 0.015], 7), 0, 0, 0);
-    add(limb(gloveM, [[0.048, -0.134, 0.228], [-0.014, -0.122, 0.192], [-0.042, -0.14, 0.216]], [0.020, 0.019, 0.014], 7), 0, 0, 0);
-    add(limb(gloveM, [[-0.028, -0.088, 0.285], [-0.052, -0.068, 0.225], [-0.046, -0.058, 0.172]], [0.019, 0.018, 0.014], 7), 0, 0, 0);
-    // --- forearm sweeping in from the bottom-right, sleeve + poncho cuff ---
-    // (kept well in front of the near plane — a box here once sat behind the lens and
-    // rendered as a clipped white block)
-    add(blob(gloveM, 0.052, 0.046, 0.054, 10), 0.010, -0.205, 0.20);         // wrist
-    const fore = add(limb(cuffM, [[0.02, -0.235, 0.205], [0.05, -0.315, 0.33], [0.095, -0.42, 0.50]],
-      [0.056, 0.068, 0.082], 12), 0, 0, 0); ink(fore, 0.005);
-    const cuffB = add(new THREE.Mesh(new THREE.TorusGeometry(0.084, 0.022, 8, 16), ponchoM), 0.052, -0.318, 0.335);
-    cuffB.rotation.x = 1.08; ink(cuffB, 0.005);
+    const frame = add(blob(steelM, 0.042, 0.055, 0.085, 12), 0, 0.004, 0.070); ink(frame, 0.006);       // recoil shield / frame
+    add(new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.24, 8), steelM), 0, 0.068, -0.01, Math.PI / 2);  // topstrap
+    // cocked hammer: a curved spur swept back, knurled tip
+    const hammer = add(limb(steelDarkM, [[0, 0.070, 0.105], [0, 0.112, 0.148], [0, 0.104, 0.185]], [0.015, 0.013, 0.019], 8), 0, 0, 0);
+    ink(hammer, 0.005);
+    // walnut plow-handle: butt curves out BELOW the fist (per the reference)
+    const gripW = add(limb(walnutM, [[0, -0.030, 0.130], [0, -0.100, 0.180], [0, -0.170, 0.205], [0, -0.208, 0.192]],
+      [0.030, 0.037, 0.041, 0.026], 10), 0, 0, 0); ink(gripW, 0.006);
+    // --- the gloved fist: one chunky mass + finger ridges + hooked thumb ---
+    const fist = add(blob(gloveM, 0.068, 0.082, 0.086, 14), 0.010, -0.072, 0.148, 0, 0, 0.12); ink(fist, 0.006);
+    for (let i = 0; i < 4; i++) {                                    // finger ridges wrapping the front
+      const fy = -0.026 - i * 0.031;
+      add(limb(gloveDarkM, [[0.052, fy, 0.150], [0.0, fy - 0.004, 0.104], [-0.048, fy, 0.148]],
+        [0.0175, 0.0165, 0.0140], 7), 0, 0, 0);
+    }
+    add(limb(gloveM, [[0.055, -0.012, 0.190], [0.016, 0.028, 0.166], [-0.026, 0.030, 0.152]],
+      [0.020, 0.018, 0.014], 7), 0, 0, 0);                            // thumb hooked over the back
+    add(blob(gloveDarkM, 0.020, 0.014, 0.020, 8), 0.046, -0.020, 0.128);   // knuckle bumps
+    add(blob(gloveDarkM, 0.018, 0.013, 0.018, 8), 0.050, -0.052, 0.132);
+    // flared gauntlet cuff
+    const cuff = add(lathe([[0.062, 0], [0.072, 0.030], [0.086, 0.075], [0.094, 0.105]], 12, gloveM), 0.035, -0.185, 0.235, 0.9, 0, -0.25);
+    ink(cuff, 0.006);
+    // --- olive sleeve sweeping to the bottom-right corner, with the patterned band ---
+    const sleeve = add(limb(sleeveM, [[0.050, -0.215, 0.270], [0.135, -0.290, 0.395], [0.255, -0.395, 0.545]],
+      [0.078, 0.098, 0.125], 12), 0, 0, 0); ink(sleeve, 0.006);
+    const band1 = add(new THREE.Mesh(new THREE.TorusGeometry(0.100, 0.017, 8, 16), bandM), 0.135, -0.290, 0.395);
+    band1.rotation.x = 0.85; band1.rotation.z = -0.45; ink(band1, 0.005);
+    const band2 = add(new THREE.Mesh(new THREE.TorusGeometry(0.112, 0.012, 8, 16), steelDarkM), 0.168, -0.318, 0.437);
+    band2.rotation.x = 0.85; band2.rotation.z = -0.45;
 
     // muzzle flash + smoke anchor
     const flash = new THREE.Mesh(new THREE.PlaneGeometry(0.30, 0.30), new THREE.MeshBasicMaterial({ map: TEX.flash, color: 0xffd9a0, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
     flash.position.set(0, 0.035, -0.74); grp.add(flash);
-    const flashPt = new THREE.PointLight(0xffa040, 0, 4.0); flashPt.position.set(0, 0.12, -0.6); grp.add(flashPt);
+    const flashPt = new THREE.PointLight(0xffa040, 0, 4.0); flashPt.position.set(0, 0.12, -0.6); flashPt.visible = false; flashLights.push(flashPt); grp.add(flashPt);
 
-    grp.position.set(0.235, -0.175, -0.52);
-    grp.rotation.y = -0.20; grp.rotation.z = 0.06; grp.rotation.x = 0.05;
-    grp.scale.setScalar(0.74);
+    grp.position.set(0.385, -0.235, -0.70);
+    grp.rotation.y = 0.80; grp.rotation.z = -0.06; grp.rotation.x = 0.56;
+    grp.scale.setScalar(0.88);
     const kicker = new THREE.PointLight(0xffc98a, 0.55, 3.0, 1.2);
     kicker.position.set(-0.55, 0.75, -0.35); camera.add(kicker);
     camera.add(grp); scene.add(camera);
@@ -1091,7 +1111,7 @@
     let recoil = 0, flashT = 0, sway = new THREE.Vector2(), bob = 0;
     const homePos = grp.position.clone();
     return {
-      group: grp,
+      group: grp, kicker,
       fireFX() { recoil = 1; flashT = 1; flash.material.rotation = rnd(0, 6.28); flashPt.intensity = 6; },
       update(dt, lookVel, moving) {
         recoil = lerp(recoil, 0, dt * 10);
@@ -1254,7 +1274,7 @@
     // muzzle flash at the barrel tip
     const flash = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.95), new THREE.MeshBasicMaterial({ map: TEX.flash, color: 0xffd9a0, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
     flash.position.set(-0.76, 1.20, 0.34); g.add(flash);
-    const fpt = new THREE.PointLight(0xffa848, 0, 13.0); fpt.position.set(-0.92, 1.22, 0.46); g.add(fpt);
+    const fpt = new THREE.PointLight(0xffa848, 0, 13.0); fpt.position.set(-0.92, 1.22, 0.46); fpt.visible = false; flashLights.push(fpt); g.add(fpt);
     g.userData = { flash, fpt, rifle };
     shad(g);
     return g;
@@ -1263,18 +1283,22 @@
     const list = [];
     // seat each outlaw behind a far-bank cover point at a chosen height
     const seats = [
-      // Deliberately NOT a firing line: depths, heights and spacing all differ, and two
-      // are clustered so the eye reads groups instead of a metronome.
-      { x: -13.5, y: 0.15, z: -6.6, hide: -1.9, color: 0x3a2a44, scarf: 0x6a3a2a },  // closest, biggest
-      { x: -4.0, y: 0.45, z: -10.5, hide: -2.0, color: 0x2c2438, scarf: 0x555c37 },
-      { x: -1.0, y: 1.35, z: -13.0, hide: -2.0, color: 0x40302a, scarf: 0x7a4a2a },  // up on a shelf
-      { x: 11.0, y: 0.30, z: -8.2, hide: -2.0, color: 0x2a3040, scarf: 0x555c37 },
-      { x: 21.0, y: 0.35, z: -15.5, hide: -1.9, color: 0x352838, scarf: 0x6a3a2a },  // furthest, hazed
+      // Three pockets along The Run; `wake` is the x the player must reach to rouse them.
+      // Pocket A — the cover run (beat 2)
+      { x: -124, y: 0.20, z: -8.5, hide: -1.9, color: 0x3a2a44, scarf: 0x6a3a2a, wake: -160 },
+      { x: -113, y: 0.45, z: -11.0, hide: -2.0, color: 0x2c2438, scarf: 0x555c37, wake: -160 },
+      // Pocket B — the north-bank maze (beat 4)
+      { x: -22, y: 0.30, z: -9.5, hide: -2.0, color: 0x40302a, scarf: 0x7a4a2a, wake: -68 },
+      { x: -8, y: 1.35, z: -13.0, hide: -2.0, color: 0x2a3040, scarf: 0x555c37, wake: -68 },  // on the shelf
+      { x: 2, y: 0.15, z: -8.0, hide: -1.9, color: 0x352838, scarf: 0x6a3a2a, wake: -68 },
+      // Pocket C — past the second ford (beats 6-7)
+      { x: 126, y: 0.30, z: -9.0, hide: -2.0, color: 0x2c2438, scarf: 0x555c37, wake: 78 },
+      { x: 143, y: 0.40, z: -12.5, hide: -1.9, color: 0x3a2a44, scarf: 0x6a3a2a, wake: 78 },
     ];
     for (const s of seats) {
       const o = makeOutlaw(s.color, s.scarf, seats.indexOf(s));
       o.position.set(s.x, s.y + s.hide, s.z);
-      o.userData.seatY = s.y; o.userData.hideY = s.y + s.hide;
+      o.userData.seatY = s.y; o.userData.hideY = s.y + s.hide; o.userData.wake = s.wake;
       o.userData.state = 'down'; o.userData.t = rnd(1.5, 5); o.userData.up = 0;
       o.userData.alive = true;
       scene.add(o); list.push(o);
@@ -1290,6 +1314,12 @@
         }
         if (!u.alive) { // sink and stay
           u.up = lerp(u.up, 0, dt * 6); o.position.y = lerp(u.hideY, u.seatY, u.up); continue;
+        }
+        // pocket gating: sleep until the player advances past this pocket's wake line
+        const engaged = player.pos.x >= u.wake && Math.abs(player.pos.x - o.position.x) < 75;
+        if (!engaged) {
+          u.up = lerp(u.up, 0, dt * 4); o.position.y = lerp(u.hideY, u.seatY, u.up);
+          u.state = 'down'; u.t = rnd(1.0, 2.5); continue;
         }
         u.t -= dt;
         if (u.state === 'down' && u.t <= 0) { u.state = 'rising'; }
@@ -1381,16 +1411,17 @@
     sharps.position.set(-0.30, 2.05, 0.30); g.add(sharps);
     const glow = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.6), new THREE.MeshBasicMaterial({ map: TEX.glow, color: 0xffca7a, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
     glow.position.set(1.25, 2.75, 0.45); g.add(glow);
-    const pt = new THREE.PointLight(0xffc070, 0, 14); pt.position.set(1.3, 2.8, 0.7); g.add(pt);
-    g.position.set(-9.0, 1.05, -22.5); g.scale.setScalar(1.5);
+    const pt = new THREE.PointLight(0xffc070, 0, 14); pt.position.set(1.3, 2.8, 0.7); pt.visible = false; flashLights.push(pt); g.add(pt);
+    g.position.set(63, 4.55, -13.2); g.scale.setScalar(1.5);
     shad(g);
     scene.add(g);
 
     let t = rnd(6, 10), state = 'watch', charge = 0;
     function update(dt) {
       // faint idle: duster shift
-      g.rotation.y = -0.15 + Math.sin(clock * 0.4) * 0.03;
-      if (state === 'watch') { t -= dt; if (t <= 0) { state = 'charge'; charge = 0; } }
+      g.rotation.y = -1.0 + Math.sin(clock * 0.4) * 0.03;
+      const inRange = player.pos.x > 8 && player.pos.x < 112;
+      if (state === 'watch') { if (inRange) { t -= dt; if (t <= 0) { state = 'charge'; charge = 0; } } }
       else if (state === 'charge') {
         charge += dt; glow.material.opacity = Math.min(1, charge / 1.4) * (0.6 + 0.4 * Math.sin(clock * 20));
         pt.intensity = Math.min(1, charge / 1.4) * 6;
@@ -1442,7 +1473,7 @@
     const mat = new THREE.SpriteMaterial({ map: TEX.smoke, color: 0x2a3556, transparent: true, opacity: 0.0, depthWrite: false, fog: true });
     for (let i = 0; i < 10; i++) {
       const s = new THREE.Sprite(mat.clone());
-      s.position.set(rnd(-30, 30), rnd(1, 6), rnd(-14, 2));
+      s.position.set(rnd(-150, 150), rnd(1, 6), rnd(-14, 2));
       s.scale.setScalar(rnd(6, 14)); s.material.opacity = rnd(0.04, 0.1);
       s.userData = { vx: rnd(0.05, 0.2), ph: rnd(0, 6.28) };
       scene.add(s); haze.push(s);
@@ -1465,10 +1496,10 @@
     const tex = new THREE.CanvasTexture(c);
     // [z, y, height, width, colour, opacity]
     const layers = [
-      [-31, 0.3, 7.0, 160, TOD.mist[0], 0.20 * TOD.mistI],   // haze hugging the far bank
-      [-23, 0.1, 5.4, 150, TOD.mist[1], 0.15 * TOD.mistI],
-      [-13, 0.0, 3.8, 140, TOD.mist[2], 0.11 * TOD.mistI],   // mid-river mist
-      [-4, -0.1, 2.6, 130, TOD.mist[3], 0.08 * TOD.mistI],
+      [-31, 0.3, 7.0, 380, TOD.mist[0], 0.20 * TOD.mistI],   // haze hugging the far bank
+      [-23, 0.1, 5.4, 370, TOD.mist[1], 0.15 * TOD.mistI],
+      [-13, 0.0, 3.8, 360, TOD.mist[2], 0.11 * TOD.mistI],   // mid-river mist
+      [-4, -0.1, 2.6, 350, TOD.mist[3], 0.08 * TOD.mistI],
     ];
     for (const L of layers) {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(L[3], L[2]),
@@ -1501,7 +1532,7 @@
   function dropStone() {
     const g = new THREE.SphereGeometry(rnd(0.06, 0.14), 5, 4);
     const m = new THREE.Mesh(g, toon(COL.rockMid, { flatShading: true }));
-    m.position.set(rnd(-30, 30), rnd(20, 40), rnd(-28, -14));
+    m.position.set(rnd(-150, 150), rnd(20, 40), rnd(-28, -14));
     m.userData = { vy: 0 }; scene.add(m); stones.push(m);
   }
   let stoneTimer = 3;
@@ -1512,7 +1543,7 @@
   const NearMiss = {
     trigger(heavy) {
       // choose a point on the foreground rock near the player
-      const x = rnd(-2.2, 2.2), y = rnd(-0.4, 1.2), z = 4.8;
+      const x = player.pos.x + rnd(-2.6, 2.6), y = rnd(0.2, 1.6), z = player.pos.z - rnd(2.2, 3.6);
       Puffs.spawn(x, y, z, 0x9a8a72, heavy ? 8 : 4);
       Audio.chip(heavy);
       shake += heavy ? 0.6 : 0.22;
@@ -1620,8 +1651,15 @@
     fov: 46,
   };
   const FPS_FOV = 58;   // freeze look at authored defaults for screenshots
-  const player = { yaw: 0, pitch: -0.155, locked: false, lockBlocked: false, steer: new THREE.Vector2(), lookVel: new THREE.Vector2() };
-  const YAW_LIMIT = 0.72, PITCH_LO = -0.34, PITCH_HI = 0.42;   // you're pinned in cover
+  const Q = new URLSearchParams(location.search);
+  const SHOT_X = parseFloat(Q.get('px') || '-10'), SHOT_Z = parseFloat(Q.get('pz') || '9'), SHOT_YAW = parseFloat(Q.get('pyaw') || '0');
+  const player = {
+    yaw: SHOT ? SHOT_YAW : 0, pitch: -0.155, locked: false, lockBlocked: false,
+    steer: new THREE.Vector2(), lookVel: new THREE.Vector2(),
+    pos: new THREE.Vector3(SHOT ? SHOT_X : -152, 0, SHOT ? SHOT_Z : 9),
+    keys: {}, eye: 1.9, stepT: 0, moving: false,
+  };
+  const PITCH_LO = -0.45, PITCH_HI = 0.45;
   let ammo = 6, reloading = false, running = false;
   let nerve = 1, shake = 0;
 
@@ -1629,7 +1667,7 @@
     if (SHOT) return;
     if (player.locked) {
       const s = 0.0022;
-      player.yaw = clamp(player.yaw - e.movementX * s, -YAW_LIMIT, YAW_LIMIT);
+      player.yaw -= e.movementX * s;
       player.pitch = clamp(player.pitch - e.movementY * s, PITCH_LO, PITCH_HI);
       player.lookVel.set(e.movementX, e.movementY);
     } else if (player.lockBlocked && running) {
@@ -1643,15 +1681,15 @@
   document.addEventListener('mousedown', (e) => { if (!running) return; if (e.button === 0) { fire(); if (!player.locked && !player.lockBlocked) requestLock(); } });
   document.addEventListener('contextmenu', (e) => e.preventDefault());
   document.addEventListener('keydown', (e) => {
+    player.keys[e.code] = true;
     if (e.code === 'KeyR') reload();
     if (e.code === 'KeyC') cine = !cine;
     if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') player.steady = true;
-    if (e.code === 'KeyA') player.yaw = clamp(player.yaw + 0.05, -YAW_LIMIT, YAW_LIMIT);
-    if (e.code === 'KeyD') player.yaw = clamp(player.yaw - 0.05, -YAW_LIMIT, YAW_LIMIT);
-    if (e.code === 'KeyW') player.pitch = clamp(player.pitch + 0.04, PITCH_LO, PITCH_HI);
-    if (e.code === 'KeyS') player.pitch = clamp(player.pitch - 0.04, PITCH_LO, PITCH_HI);
   });
-  document.addEventListener('keyup', (e) => { if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') player.steady = false; });
+  document.addEventListener('keyup', (e) => {
+    player.keys[e.code] = false;
+    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') player.steady = false;
+  });
 
   function requestLock() {
     if (SHOT || player.lockBlocked) return;
@@ -1685,7 +1723,7 @@
       // splash if the shot lands in the river band
       const t = -ray.ray.origin.y / ray.ray.direction.y;
       if (t > 0) { const px = ray.ray.origin.x + ray.ray.direction.x * t, pz = ray.ray.origin.z + ray.ray.direction.z * t;
-        if (pz < 3 && pz > -7 && Math.abs(px) < 40) Splashes.spawn(px, pz); }
+        if (pz < 3 && pz > -7 && Math.abs(px) < 168) Splashes.spawn(px, pz); }
     }
     if (ammo === 0) dom.reloadTag.classList.add('show');
   }
@@ -1729,16 +1767,52 @@
   let last = performance.now(), clock = 0;
   function frame() {
     requestAnimationFrame(frame);
-    const now = performance.now(); let dt = Math.min((now - last) / 1000, 0.05); last = now; clock += dt;
+    const now = performance.now(); const dt = Math.min((now - last) / 1000, 0.05); last = now;
+    tick(dt); composer.render();
+  }
+  // One simulation+render step. Exposed for the headless tools: rAF in headless_shell is
+  // throttled to near-zero (the page counts as hidden), so tests and capture scripts
+  // drive the loop explicitly and deterministically via window.__step.
+  function tick(dt) {
+    clock += dt;
 
     riverUniforms.uTime.value = clock;
     RIM.dir.copy(sun.position).sub(sun.target.position).normalize();
+    for (let i = 0; i < flashLights.length; i++) flashLights[i].visible = flashLights[i].intensity > 0.05;
 
     // steer look
     if (!SHOT && player.lockBlocked && (player.steer.x || player.steer.y)) {
-      player.yaw = clamp(player.yaw - player.steer.x * 1.4 * dt, -YAW_LIMIT, YAW_LIMIT);
+      player.yaw -= player.steer.x * 1.4 * dt;
       player.pitch = clamp(player.pitch - player.steer.y * 1.0 * dt, PITCH_LO, PITCH_HI);
       player.lookVel.set(player.steer.x * 40, player.steer.y * 40);
+    }
+
+    // --- TRAVERSAL MOVEMENT: walk the run, west to east ---
+    if (running && !SHOT) {
+      let ix = 0, iz = 0;
+      if (player.keys['KeyW']) iz += 1; if (player.keys['KeyS']) iz -= 1;
+      if (player.keys['KeyA']) ix -= 1; if (player.keys['KeyD']) ix += 1;
+      const mlen = Math.hypot(ix, iz);
+      player.moving = mlen > 0;
+      const onFord = Math.abs(player.pos.x + 60) < 9 || Math.abs(player.pos.x - 115) < 9;
+      const inWater = player.pos.z > -7.6 && player.pos.z < 4.6 && !onFord;
+      if (player.moving) {
+        ix /= mlen; iz /= mlen;
+        const fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw);
+        const rx = Math.cos(player.yaw), rz = -Math.sin(player.yaw);
+        const spd = inWater ? 2.6 : (onFord ? 4.2 : 5.6);
+        player.pos.x += (fx * iz + rx * ix) * spd * dt;
+        player.pos.z += (fz * iz + rz * ix) * spd * dt;
+        player.stepT += dt * spd;
+      }
+      // corridor bounds + the Narrows pinch (only the gap by the water is passable)
+      player.pos.x = clamp(player.pos.x, -160, 160);
+      player.pos.z = clamp(player.pos.z, -19, 23);
+      if (player.pos.x > 50 && player.pos.x < 78) player.pos.z = clamp(player.pos.z, -0.5, 7.5);
+      // wading: the eye dips and the walk slows
+      player.eye = lerp(player.eye, inWater ? 1.42 : 1.9, dt * 4);
+      // reaching the east bend completes the run
+      if (!tick._ended && player.pos.x > 156) { tick._ended = true; endCard(); }
     }
 
     // camera orientation + breathing + shake + tremor from low nerve
@@ -1750,17 +1824,22 @@
     if (cine) {
       // Frame Jody from over his shoulder; he yaws with the player's aim.
       Jody.group.visible = true; Colt.group.visible = false;
+      Jody.charLights(true); Colt.kicker.visible = false;
+      Jody.group.position.x = player.pos.x + 0.4;
+      Jody.group.position.z = player.pos.z - 1.4;
       Jody.group.rotation.y = 0.34 + player.yaw * 0.55;
       const base = Jody.group.position;
       const off = CINE.offset.clone().applyAxisAngle(_up, player.yaw * 0.55);
       camera.position.set(base.x + off.x, base.y + off.y, base.z + off.z);
       const target = CINE.look.clone().applyAxisAngle(_up, player.yaw * 0.55);
-      camera.lookAt(target.x, target.y + player.pitch * 6.0, target.z);
+      camera.lookAt(base.x + target.x, target.y + player.pitch * 6.0, base.z + target.z - 6.4);
       camera.rotation.z = 0;
       if (camera.fov !== CINE.fov) { camera.fov = CINE.fov; camera.updateProjectionMatrix(); }
     } else {
       Jody.group.visible = false; Colt.group.visible = true;
-      camera.position.copy(CAM_BASE);
+      Jody.charLights(false); Colt.kicker.visible = true;
+      const bob = player.moving ? Math.sin(player.stepT * 2.1) * 0.05 : 0;
+      camera.position.set(player.pos.x, player.eye + bob, player.pos.z);
       camera.rotation.y = player.yaw + sx + Math.sin(clock * 7) * trem;
       camera.rotation.x = player.pitch + sy + breathe + Math.cos(clock * 6) * trem;
       if (camera.fov !== FPS_FOV) { camera.fov = FPS_FOV; camera.updateProjectionMatrix(); }
@@ -1778,7 +1857,7 @@
     // reeds sway
     for (const r of reeds) { r.rotation.z = Math.sin(clock * 1.6 + r.userData.phase) * 0.18; }
     // haze drift
-    for (const h of haze) { h.position.x += h.userData.vx * dt; if (h.position.x > 34) h.position.x = -34; h.material.opacity = Math.min(0.14, h.material.opacity + dt * 0.001); }
+    for (const h of haze) { h.position.x += h.userData.vx * dt; if (h.position.x > 160) h.position.x = -160; h.material.opacity = Math.min(0.14, h.material.opacity + dt * 0.001); }
     for (const m of mistBands) { const u = m.userData; m.material.opacity = u.base * (0.82 + 0.18 * Math.sin(clock * 0.25 + u.ph)); }
     // clouds drift slowly across the sky strip
     for (const c of clouds) { c.position.x += c.userData.vx * dt; if (c.position.x > 70) c.position.x = -70; }
@@ -1793,13 +1872,19 @@
     // nerve slowly recovers
     nerve = clamp(nerve + dt * 0.02, 0.08, 1);
     dom.nerveFill.style.transform = 'scaleX(' + nerve + ')';
-
-    composer.render();
   }
 
   /* =========================================================================
      BOOT
      ========================================================================= */
+  function endCard() {
+    const d = document.createElement('div');
+    d.className = 'steerHint';
+    d.style.bottom = '44vh'; d.style.fontSize = '17px'; d.style.letterSpacing = '0.32em'; d.style.padding = '12px 26px';
+    d.textContent = 'THE CANYON OPENS \u2014 YOU MADE THE RUN';
+    dom.hud.appendChild(d);
+    Audio.waveStart && Audio.waveStart();
+  }
   function boot() {
     dom.loading.classList.add('hidden');
     dom.title.classList.remove('hidden');
@@ -1817,9 +1902,14 @@
   // debug hook for headless smoke tests
   window.__dbg = { yaw: () => player.yaw, pitch: () => player.pitch, ammo: () => ammo, puffs: () => Puffs.count(), enemies: () => Enemies.list.length };
   window.__fire = () => fire();
+  window.__pos = () => [+player.pos.x.toFixed(1), +player.pos.z.toFixed(1)];
+  window.__setPos = (x, z, yaw) => { player.pos.x = x; player.pos.z = z; if (yaw != null) player.yaw = yaw; };
+  window.__key = (c, v) => { player.keys[c] = v; };
+  window.__step = (n, dtStep) => { for (let i = 0; i < n; i++) tick(dtStep || 0.0166); };
   window.__reload = () => { ammo = 6; updateRounds(); };
   window.__enemyFire = () => { for (const o of Enemies.list) { o.userData.flash.material.opacity = 1; o.userData.fpt.intensity = 8.0; } };
   window.__three = { scene, camera, THREE, cliffs };
+  window.__renderer = renderer; window.__composer = composer;
   window.__probe = function () {
     const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
     const ray = new THREE.Raycaster(); ray.setFromCamera(new THREE.Vector2(0, 0), camera);
