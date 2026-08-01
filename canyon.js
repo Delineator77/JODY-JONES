@@ -91,6 +91,9 @@
       '  float mag = sqrt(gx*gx + gy*gy);\n' +
       '  float edge = smoothstep(uThreshold, uThreshold+0.35, mag);\n' +
       '  vec4 base = texture2D(tDiffuse, vUv);\n' +
+      '  // never draw ink INSIDE a glow (muzzle flashes, sun glints) — a soft radial\n' +
+      '  // otherwise picks up a dark Sobel ring and reads as a dirty disc.\n' +
+      '  edge *= 1.0 - smoothstep(0.50, 0.86, lum(base.rgb));\n' +
       '  gl_FragColor = vec4(mix(base.rgb, uInk, edge*uStrength), base.a);\n' +
       '}',
   });
@@ -158,8 +161,28 @@
     x.fillStyle = g; x.fillRect(0, 0, 64, 64);
     return new THREE.CanvasTexture(c);
   }
+  // Hard-edged comic star-burst muzzle flash (a soft glow reads as a dirty disc and
+  // picks up ink rings; the illustrated look wants crisp spikes).
+  function burstTexture() {
+    const c = document.createElement('canvas'); c.width = c.height = 128;
+    const x = c.getContext('2d'); const cx = 64, cy = 64;
+    function star(spikes, rOuter, rInner, fill, rot) {
+      x.beginPath();
+      for (let i = 0; i < spikes * 2; i++) {
+        const a = rot + (i * Math.PI) / spikes;
+        const r = i % 2 === 0 ? rOuter : rInner;
+        const px = cx + Math.cos(a) * r, py = cy + Math.sin(a) * r;
+        i === 0 ? x.moveTo(px, py) : x.lineTo(px, py);
+      }
+      x.closePath(); x.fillStyle = fill; x.fill();
+    }
+    star(7, 62, 20, '#e8842a', 0.15);          // outer amber spikes
+    star(7, 44, 15, '#f4b45e', 0.15);          // mid
+    star(6, 26, 11, '#fff0cf', 0.5);           // ivory hot core
+    return new THREE.CanvasTexture(c);
+  }
   const TEX = {
-    flash: softDot('rgba(255,240,210,1)', 'rgba(255,150,60,0.65)'),
+    flash: burstTexture(),
     smoke: softDot('rgba(120,130,150,0.5)', 'rgba(70,80,110,0.22)'),
     splash: softDot('rgba(220,232,244,0.95)', 'rgba(150,180,210,0.35)'),
     glow: softDot('rgba(255,190,110,0.9)', 'rgba(255,120,40,0.3)'),
@@ -545,9 +568,9 @@
     }
 
     // muzzle flash + smoke anchor
-    const flash = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.9), new THREE.MeshBasicMaterial({ map: TEX.flash, color: COL.muzzle, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
-    flash.position.set(0, 0.035, -0.78); grp.add(flash);
-    const flashPt = new THREE.PointLight(0xffb060, 0, 8); flashPt.position.set(0, 0.2, -1); grp.add(flashPt);
+    const flash = new THREE.Mesh(new THREE.PlaneGeometry(0.40, 0.40), new THREE.MeshBasicMaterial({ map: TEX.flash, color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
+    flash.position.set(0, 0.035, -0.76); grp.add(flash);
+    const flashPt = new THREE.PointLight(0xffb060, 0, 7); flashPt.position.set(0, 0.2, -1); grp.add(flashPt);
 
     grp.position.set(0.235, -0.175, -0.52);
     grp.rotation.y = -0.17; grp.rotation.z = 0.05; grp.rotation.x = 0.05;
@@ -632,9 +655,9 @@
     rifle.position.set(-0.05, 1.30, 0.22); rifle.rotation.y = -0.12; rifle.rotation.z = 0.10;
     g.add(rifle);
     // muzzle flash at the barrel tip
-    const flash = new THREE.Mesh(new THREE.PlaneGeometry(0.85, 0.85), new THREE.MeshBasicMaterial({ map: TEX.flash, color: COL.muzzle, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
+    const flash = new THREE.Mesh(new THREE.PlaneGeometry(0.55, 0.55), new THREE.MeshBasicMaterial({ map: TEX.flash, color: COL.muzzle, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
     flash.position.set(-0.70, 1.36, 0.28); g.add(flash);
-    const fpt = new THREE.PointLight(0xffb060, 0, 7); fpt.position.set(-0.85, 1.38, 0.4); g.add(fpt);
+    const fpt = new THREE.PointLight(0xffb060, 0, 5.5); fpt.position.set(-0.85, 1.38, 0.4); g.add(fpt);
     g.userData = { flash, fpt, rifle };
     return g;
   }
@@ -685,12 +708,12 @@
         o.rotation.y = Math.atan2(camera.position.x - o.position.x, camera.position.z - o.position.z);
         // flash decay
         const f = o.userData.flash;
-        if (f.material.opacity > 0) { f.material.opacity = Math.max(0, f.material.opacity - dt * 5); o.userData.fpt.intensity = f.material.opacity * 5; }
+        if (f.material.opacity > 0) { f.material.opacity = Math.max(0, f.material.opacity - dt * 5); o.userData.fpt.intensity = f.material.opacity * 1.8; }
       }
     }
     function fire(o) {
       o.userData.flash.material.opacity = 1; o.userData.flash.material.rotation = rnd(0, 6.28);
-      o.userData.fpt.intensity = 5;
+      o.userData.fpt.intensity = 1.8;
       Audio.enemyShot(o.position);
       // a near-miss on the player: chip the boulder + whistle + nerve hit
       if (Math.random() < 0.6) NearMiss.trigger();
@@ -1101,6 +1124,8 @@
 
   // debug hook for headless smoke tests
   window.__dbg = { yaw: () => player.yaw, pitch: () => player.pitch, ammo: () => ammo, puffs: () => Puffs.count(), enemies: () => Enemies.list.length };
+  window.__fire = () => fire();
+  window.__enemyFire = () => { for (const o of Enemies.list) { o.userData.flash.material.opacity = 1; o.userData.fpt.intensity = 1.8; } };
   window.__three = { scene, camera, THREE, cliffs };
   window.__probe = function () {
     const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
