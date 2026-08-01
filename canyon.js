@@ -853,6 +853,117 @@
   })();
 
   /* =========================================================================
+     JODY JONES — full character, for the cinematic third-person camera.
+     Seen mostly from behind/over-the-shoulder, so the silhouette that matters is
+     hat brim, blond hair, the fringed olive poncho, and the extended Colt arm.
+     ========================================================================= */
+  const Jody = (function () {
+    const g = new THREE.Group();
+    // Aztec diamond band on the poncho — the character's signature pattern.
+    function ponchoTexture() {
+      const c = document.createElement('canvas'); c.width = 128; c.height = 128;
+      const x = c.getContext('2d');
+      x.fillStyle = '#6b6b34'; x.fillRect(0, 0, 128, 128);                 // olive ground
+      x.fillStyle = '#4e5026';
+      for (let i = 0; i < 128; i += 8) x.fillRect(0, i, 128, 1);           // woven weft
+      function band(cy, h, col, accent) {
+        x.fillStyle = col; x.fillRect(0, cy - h / 2, 128, h);
+        x.fillStyle = accent;
+        for (let dx = 0; dx < 128; dx += 22) {                            // diamonds
+          x.beginPath();
+          x.moveTo(dx + 11, cy - h / 2 + 2); x.lineTo(dx + 20, cy);
+          x.lineTo(dx + 11, cy + h / 2 - 2); x.lineTo(dx + 2, cy); x.closePath(); x.fill();
+        }
+      }
+      band(40, 15, '#14203a', '#b04a29');
+      band(92, 15, '#14203a', '#ecdfc4');
+      const t = new THREE.CanvasTexture(c);
+      t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(2, 1);
+      return t;
+    }
+    const ponchoMat = addRim(new THREE.MeshStandardMaterial({
+      map: ponchoTexture(), roughness: 0.95, metalness: 0, flatShading: true, side: THREE.DoubleSide }));
+    const shirt = toon(0x1b2440, { flatShading: true });
+    const hatM = toon(0x14161e, { flatShading: true });
+    const hairM = toon(0xb98b4a, { flatShading: true });     // blond, shoulder length
+    const skinM = toon(0xa9744c, { flatShading: true });
+    const leatherM = toon(0x4a2f18, { flatShading: true });
+    const steelM = toon(0x2b303b, { flatShading: true, roughness: 0.42, metalness: 0.6 });
+    function b(w, h, d, mat, x, y, z, rz, rx) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      m.position.set(x, y, z); if (rz) m.rotation.z = rz; if (rx) m.rotation.x = rx;
+      g.add(m); return m;
+    }
+    // legs + boots, braced behind cover
+    b(0.19, 0.62, 0.22, shirt, -0.17, 0.32, 0.02, 0.06);
+    b(0.19, 0.62, 0.22, shirt, 0.18, 0.32, -0.04, -0.08);
+    b(0.24, 0.12, 0.31, leatherM, -0.18, 0.06, 0.05);
+    b(0.24, 0.12, 0.31, leatherM, 0.19, 0.06, -0.01);
+    b(0.62, 0.10, 0.34, leatherM, 0, 0.95, 0);                       // gunbelt
+    // torso
+    const torso = lathe([[0.02, 0], [0.28, 0.02], [0.32, 0.20], [0.34, 0.46],
+      [0.29, 0.60], [0.02, 0.62]], 13, shirt);
+    torso.position.set(0, 1.02, 0); g.add(torso);
+    // THE PONCHO — a flared lathe over the torso, hem sitting mid-thigh
+    const poncho = lathe([[0.14, 0.86], [0.34, 0.80], [0.44, 0.52], [0.50, 0.16], [0.52, 0.0]], 16, ponchoMat);
+    poncho.position.set(0, 0.82, 0); g.add(poncho);
+    // fringe hanging off the hem
+    for (let i = 0; i < 26; i++) {
+      const a = (i / 26) * Math.PI * 2;
+      const fr = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.15, 0.022), ponchoMat);
+      fr.position.set(Math.cos(a) * 0.51, 0.75, Math.sin(a) * 0.51);
+      g.add(fr);
+    }
+    // arms: left braced on the rock, right extended with the Colt
+    b(0.16, 0.42, 0.17, shirt, -0.40, 1.28, 0.10, 0.55);
+    b(0.15, 0.40, 0.16, shirt, -0.60, 1.06, 0.34, 0.95);
+    b(0.16, 0.40, 0.17, shirt, 0.40, 1.42, 0.04, -0.52);
+    b(0.15, 0.46, 0.16, shirt, 0.60, 1.40, -0.34, -0.24, -1.05);     // right forearm extended
+    const rHand = b(0.13, 0.13, 0.15, leatherM, 0.66, 1.40, -0.66, 0, -0.3);
+    // the Colt in his fist
+    const colt = new THREE.Group();
+    const cb = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.030, 0.34, 8), steelM);
+    cb.rotation.x = Math.PI / 2; cb.position.set(0, 0.02, -0.20); colt.add(cb);
+    const ccyl = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.10, 10), steelM);
+    ccyl.rotation.x = Math.PI / 2; colt.add(ccyl);
+    const cg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.15, 0.07), toon(0x5a3418, { flatShading: true }));
+    cg.position.set(0, -0.11, 0.09); cg.rotation.x = -0.4; colt.add(cg);
+    colt.position.set(0.67, 1.42, -0.80); g.add(colt);
+    const coltFlash = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.6), new THREE.MeshBasicMaterial({
+      map: TEX.flash, color: 0xffd9a0, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
+    coltFlash.position.set(0.67, 1.44, -1.05); g.add(coltFlash);
+    const coltLight = new THREE.PointLight(0xffa848, 0, 8); coltLight.position.set(0.67, 1.45, -1.1); g.add(coltLight);
+    // neck, head, blond hair under a black hat
+    b(0.16, 0.12, 0.16, skinM, 0, 1.62, 0);
+    const head = b(0.24, 0.27, 0.25, skinM, 0, 1.80, 0);
+    b(0.27, 0.20, 0.27, hairM, 0, 1.84, -0.02);                      // hair mass
+    b(0.30, 0.22, 0.14, hairM, 0, 1.72, -0.12);                      // shoulder-length fall at the back
+    const brim = lathe([[0.03, 0.05], [0.20, 0.038], [0.34, 0.014], [0.45, 0], [0.47, 0.055]], 14, hatM);
+    brim.position.set(0, 1.94, 0); g.add(brim);
+    const crown = lathe([[0.02, 0], [0.19, 0.012], [0.215, 0.15], [0.19, 0.27], [0.02, 0.29]], 12, hatM);
+    crown.position.set(0, 1.95, 0); g.add(crown);
+    b(0.41, 0.045, 0.41, toon(0x3a2416, { flatShading: true }), 0, 2.01, 0);   // hat band
+
+    g.position.set(0.6, -0.55, 6.4);
+    g.rotation.y = Math.PI + 0.10;      // facing the far bank, slightly turned
+    shad(g);
+    g.visible = false;
+    scene.add(g);
+    return {
+      group: g, flash: coltFlash, light: coltLight,
+      fireFX() { coltFlash.material.opacity = 1; coltFlash.material.rotation = rnd(0, 6.28); coltLight.intensity = 6; },
+      update(dt) {
+        if (coltFlash.material.opacity > 0) {
+          coltFlash.material.opacity = Math.max(0, coltFlash.material.opacity - dt * 5);
+          coltLight.intensity = coltFlash.material.opacity * 6;
+        }
+        // subtle breathing so he isn't a statue
+        g.position.y = -0.55 + Math.sin(clock * 1.1) * 0.012;
+      },
+    };
+  })();
+
+  /* =========================================================================
      COLT VIEWMODEL  (Jody's hand + revolver at bottom of frame)
      ========================================================================= */
   const Colt = (function () {
@@ -1400,7 +1511,16 @@
   /* =========================================================================
      INPUT  (aim / fire / reload) + pointer-lock-free steer fallback
      ========================================================================= */
-  const SHOT = location.search.indexOf('shot') >= 0;   // freeze look at authored defaults for screenshots
+  const SHOT = location.search.indexOf('shot') >= 0;
+  // CINEMATIC third-person rig: over-the-shoulder, Jody large on the right of frame,
+  // the canyon receding to the left — the composition of the film reference stills.
+  let cine = location.search.indexOf('cine') >= 0;
+  const CINE = {
+    offset: new THREE.Vector3(-1.02, 1.86, 2.62),   // behind + left of Jody's shoulder
+    look: new THREE.Vector3(0.10, 1.42, -15.0),     // aim point across the river
+    fov: 46,
+  };
+  const FPS_FOV = 58;   // freeze look at authored defaults for screenshots
   const player = { yaw: 0, pitch: -0.155, locked: false, lockBlocked: false, steer: new THREE.Vector2(), lookVel: new THREE.Vector2() };
   const YAW_LIMIT = 0.72, PITCH_LO = -0.34, PITCH_HI = 0.42;   // you're pinned in cover
   let ammo = 6, reloading = false, running = false;
@@ -1425,6 +1545,7 @@
   document.addEventListener('contextmenu', (e) => e.preventDefault());
   document.addEventListener('keydown', (e) => {
     if (e.code === 'KeyR') reload();
+    if (e.code === 'KeyC') cine = !cine;
     if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') player.steady = true;
     if (e.code === 'KeyA') player.yaw = clamp(player.yaw + 0.05, -YAW_LIMIT, YAW_LIMIT);
     if (e.code === 'KeyD') player.yaw = clamp(player.yaw - 0.05, -YAW_LIMIT, YAW_LIMIT);
@@ -1449,7 +1570,7 @@
     if (!running || reloading) return;
     if (ammo <= 0) { Audio.dry(); dom.reloadTag.classList.add('show'); return; }
     ammo--; updateRounds();
-    Colt.fireFX(); Audio.colt();
+    Colt.fireFX(); Jody.fireFX(); Audio.colt();
     (function muzzleSmoke() {
       const d = new THREE.Vector3(); camera.getWorldDirection(d);
       const o = camera.position.clone().addScaledVector(d, 1.5).add(new THREE.Vector3(0.25, -0.25, 0));
@@ -1505,6 +1626,7 @@
   /* =========================================================================
      LOOP
      ========================================================================= */
+  const _up = new THREE.Vector3(0, 1, 0);
   let last = performance.now(), clock = 0;
   function frame() {
     requestAnimationFrame(frame);
@@ -1525,14 +1647,30 @@
     const trem = (1 - nerve) * 0.02;
     shake = Math.max(0, shake - dt * 1.4);
     const sx = (Math.random() - 0.5) * shake * 0.06, sy = (Math.random() - 0.5) * shake * 0.06;
-    camera.position.copy(CAM_BASE);
     camera.rotation.order = 'YXZ';
-    camera.rotation.y = player.yaw + sx + Math.sin(clock * 7) * trem;
-    camera.rotation.x = player.pitch + sy + breathe + Math.cos(clock * 6) * trem;
+    if (cine) {
+      // Frame Jody from over his shoulder; he yaws with the player's aim.
+      Jody.group.visible = true; Colt.group.visible = false;
+      Jody.group.rotation.y = Math.PI + 0.10 + player.yaw * 0.55;
+      const base = Jody.group.position;
+      const off = CINE.offset.clone().applyAxisAngle(_up, player.yaw * 0.55);
+      camera.position.set(base.x + off.x, base.y + off.y, base.z + off.z);
+      const target = CINE.look.clone().applyAxisAngle(_up, player.yaw * 0.55);
+      camera.lookAt(target.x, target.y + player.pitch * 6.0, target.z);
+      camera.rotation.z = 0;
+      if (camera.fov !== CINE.fov) { camera.fov = CINE.fov; camera.updateProjectionMatrix(); }
+    } else {
+      Jody.group.visible = false; Colt.group.visible = true;
+      camera.position.copy(CAM_BASE);
+      camera.rotation.y = player.yaw + sx + Math.sin(clock * 7) * trem;
+      camera.rotation.x = player.pitch + sy + breathe + Math.cos(clock * 6) * trem;
+      if (camera.fov !== FPS_FOV) { camera.fov = FPS_FOV; camera.updateProjectionMatrix(); }
+    }
     player.lookVel.multiplyScalar(0.85);
 
     if (running) {
       Colt.update(dt, player.lookVel, false);
+      Jody.update(dt);
       Enemies.update(dt);
       Crow.update(dt);
     }
