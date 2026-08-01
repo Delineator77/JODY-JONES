@@ -53,6 +53,9 @@
   // (This build predates ColorManagement, so sRGB output would lift/desaturate the flats.)
   renderer.outputEncoding = THREE.LinearEncoding;
   renderer.toneMapping = THREE.NoToneMapping;
+  // Real shadows: the single biggest cue that objects sit IN the world rather than on it.
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   dom.stage.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -68,13 +71,51 @@
   const bloom = new THREE.UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.35, 0.7, 0.82);
   if (location.search.indexOf('nobloom') >= 0) bloom.strength = 0;
   composer.addPass(bloom);
+
+  // ILLUSTRATION GRADE — the step that turns a realistic render into a rendered
+  // illustration. Real lighting/shadow does the sculpting; this quantises luminance into
+  // paint-like bands, pushes shadows toward midnight navy and lights toward burnt
+  // vermillion/ivory, and lifts saturation. Palette per docs/ART_BIBLE.md.
+  const gradePass = new THREE.ShaderPass({
+    uniforms: {
+      tDiffuse: { value: null },
+      uBands: { value: 7.0 },        // luminance steps (lower = flatter//more graphic)
+      uMix: { value: 0.72 },         // how strongly to posterize
+      uSat: { value: 1.24 },
+      uShadowTint: { value: new THREE.Color(0x1b2a4e) },
+      uLightTint: { value: new THREE.Color(0xffd7a2) },
+      uTint: { value: 0.34 },
+    },
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+    fragmentShader:
+      'uniform sampler2D tDiffuse; uniform float uBands; uniform float uMix; uniform float uSat;\n' +
+      'uniform vec3 uShadowTint; uniform vec3 uLightTint; uniform float uTint; varying vec2 vUv;\n' +
+      'float lum(vec3 c){ return dot(c, vec3(0.299,0.587,0.114)); }\n' +
+      'void main(){\n' +
+      '  vec3 c = texture2D(tDiffuse, vUv).rgb;\n' +
+      '  float l = max(lum(c), 1e-4);\n' +
+      '  // quantise luminance but keep chroma — flat paint masses, hue preserved\n' +
+      '  float q = floor(l * uBands + 0.5) / uBands;\n' +
+      '  vec3 post = c * (q / l);\n' +
+      '  c = mix(c, post, uMix);\n' +
+      '  // duotone push: shadows to navy, lights to warm — the CCC separation\n' +
+      '  float t = smoothstep(0.06, 0.72, lum(c));\n' +
+      '  vec3 tinted = c * mix(uShadowTint * 2.6, uLightTint, t);\n' +
+      '  c = mix(c, tinted, uTint);\n' +
+      '  // saturation lift so the palette reads as ink-and-paint, not photography\n' +
+      '  c = clamp(mix(vec3(lum(c)), c, uSat), 0.0, 1.0);\n' +
+      '  gl_FragColor = vec4(c, 1.0);\n' +
+      '}',
+  });
+  composer.addPass(gradePass);
+
   // Full-screen INK pass — Sobel edge detect on the rendered frame draws navy comic
   // outlines at every silhouette + color boundary. This is what sells the graphic-novel look.
   const inkPass = new THREE.ShaderPass({
     uniforms: {
       tDiffuse: { value: null },
       uRes: { value: new THREE.Vector2(innerWidth, innerHeight) },
-      uStrength: { value: 0.85 }, uThreshold: { value: 0.10 },
+      uStrength: { value: 0.80 }, uThreshold: { value: 0.30 },
       uInk: { value: new THREE.Color(0x0a1020) },
     },
     vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
@@ -89,7 +130,7 @@
       '  float gx = -tl -2.0*l -bl + tr + 2.0*r + br;\n' +
       '  float gy = -tl -2.0*t -tr + bl + 2.0*bm + br;\n' +
       '  float mag = sqrt(gx*gx + gy*gy);\n' +
-      '  float edge = smoothstep(uThreshold, uThreshold+0.35, mag);\n' +
+      '  float edge = smoothstep(uThreshold, uThreshold+0.45, mag);\n' +
       '  vec4 base = texture2D(tDiffuse, vUv);\n' +
       '  // never draw ink INSIDE a glow (muzzle flashes, sun glints) — a soft radial\n' +
       '  // otherwise picks up a dark Sobel ring and reads as a dirty disc.\n' +
@@ -116,11 +157,22 @@
   const RAMP_METAL = toonRamp([40, 95, 150, 195]); // dark metal — never blows to white
   function toonMetal(color, opts) { return new THREE.MeshToonMaterial(Object.assign({ color: color, gradientMap: RAMP_METAL }, opts || {})); }
 
+  // Lit, shadow-capable surfaces. The illustrated read comes from the palette + the
+  // posterize/ink post passes, NOT from flattening the lighting itself.
   function toon(color, opts) {
-    return new THREE.MeshToonMaterial(Object.assign({ color: color, gradientMap: RAMP }, opts || {}));
+    const o = Object.assign({ color: color, roughness: 0.95, metalness: 0.0 }, opts || {});
+    delete o.gradientMap;
+    return new THREE.MeshStandardMaterial(o);
   }
   function toonSoft(color, opts) {
-    return new THREE.MeshToonMaterial(Object.assign({ color: color, gradientMap: RAMP_SOFT }, opts || {}));
+    const o = Object.assign({ color: color, roughness: 1.0, metalness: 0.0 }, opts || {});
+    delete o.gradientMap;
+    return new THREE.MeshStandardMaterial(o);
+  }
+  // Mark a mesh (and children) as participating in shadows.
+  function shad(m, cast, receive) {
+    m.traverse((o) => { if (o.isMesh) { o.castShadow = cast !== false; o.receiveShadow = receive !== false; } });
+    return m;
   }
 
   // Clip-space inverted-hull ink outline — uniform screen-width navy line.
@@ -181,7 +233,52 @@
     star(6, 26, 11, '#fff0cf', 0.5);           // ivory hot core
     return new THREE.CanvasTexture(c);
   }
+  // --- Procedural normal map from a height function (gives rock real relief) ---
+  function normalMapFrom(size, heightFn, strength, repeat) {
+    const H = new Float32Array(size * size);
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) H[y * size + x] = heightFn(x / size, y / size);
+    const c = document.createElement('canvas'); c.width = c.height = size;
+    const ctx = c.getContext('2d'); const img = ctx.createImageData(size, size);
+    const at = (x, y) => H[((y + size) % size) * size + ((x + size) % size)];
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+      const dx = (at(x + 1, y) - at(x - 1, y)) * strength;
+      const dy = (at(x, y + 1) - at(x, y - 1)) * strength;
+      let nx = -dx, ny = -dy, nz = 1;
+      const len = Math.hypot(nx, ny, nz); nx /= len; ny /= len; nz /= len;
+      const i = (y * size + x) * 4;
+      img.data[i] = (nx * 0.5 + 0.5) * 255; img.data[i + 1] = (ny * 0.5 + 0.5) * 255;
+      img.data[i + 2] = (nz * 0.5 + 0.5) * 255; img.data[i + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    const t = new THREE.CanvasTexture(c);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    if (repeat) t.repeat.set(repeat[0], repeat[1]);
+    return t;
+  }
+  function vnoise(x, y) {   // cheap value noise (seeded, deterministic)
+    const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j;
+    const h = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return s - Math.floor(s); };
+    const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
+    return (h(i, j) * (1 - u) + h(i + 1, j) * u) * (1 - v) + (h(i, j + 1) * (1 - u) + h(i + 1, j + 1) * u) * v;
+  }
+  function fbm(x, y, oct) {
+    let s = 0, a = 0.5, fx = x, fy = y;
+    for (let k = 0; k < (oct || 4); k++) { s += a * vnoise(fx, fy); fx *= 2.03; fy *= 2.01; a *= 0.5; }
+    return s;
+  }
+
   const TEX = {
+    // Sedimentary strata: strong horizontal bedding lines + grain between them.
+    // Mostly isotropic rock blotching. Box faces map UVs in different orientations, so a
+    // strongly directional pattern reads as wood grain on half the faces.
+    rockNormal: normalMapFrom(256, (u, v) => {
+      const warp = fbm(u * 2.0, v * 2.0, 4) * 3.0;
+      const bedding = (Math.sin(v * 11 + warp) * 0.5 + 0.5) * 0.30;   // gentle bedding hint
+      return bedding + fbm(u * 6, v * 6, 5) * 1.0 + fbm(u * 19, v * 19, 4) * 0.4;
+    }, 9, [2, 2]),
+    // Coarser, blockier relief for boulders and banks.
+    stoneNormal: normalMapFrom(256, (u, v) =>
+      fbm(u * 7, v * 7, 5) * 1.0 + fbm(u * 24, v * 24, 4) * 0.35, 20, [2, 2]),
     flash: burstTexture(),
     smoke: softDot('rgba(120,130,150,0.5)', 'rgba(70,80,110,0.22)'),
     splash: softDot('rgba(220,232,244,0.95)', 'rgba(150,180,210,0.35)'),
@@ -206,7 +303,12 @@
     opts = opts || {};
     const geo = rockGeo(radius, opts.squashY == null ? 0.7 : opts.squashY, opts.jitter == null ? 0.28 : opts.jitter);
     const m = new THREE.Mesh(geo, mat);
-    m.material.flatShading = true; m.material.needsUpdate = true;
+    m.material.flatShading = true;
+    if (m.material.isMeshStandardMaterial && !m.material.normalMap) {
+      m.material.normalMap = TEX.stoneNormal; m.material.normalScale = new THREE.Vector2(0.28, 0.28);
+    }
+    m.material.needsUpdate = true;
+    m.castShadow = true; m.receiveShadow = true;
     if (opts.ink !== false) ink(m, opts.ink || 0.004);
     return m;
   }
@@ -216,13 +318,33 @@
      ========================================================================= */
   // Kept deliberately low-sum: lit toon surfaces must not exceed 1.0 or the authored
   // flat colors clip toward white and the graphic palette is lost.
-  const hemi = new THREE.HemisphereLight(0x2a3a66, 0x0c1120, 0.45); scene.add(hemi);
-  scene.add(new THREE.AmbientLight(0x152340, 0.30));
-  const sun = new THREE.DirectionalLight(0xffb063, 0.85);      // low, warm, from behind far bank
-  sun.position.set(-16, 30, -34); scene.add(sun);
-  const coolFill = new THREE.DirectionalLight(0x4664a0, 0.28); // sky fill from above
-  coolFill.position.set(10, 24, 20); scene.add(coolFill);
-  const bounce = new THREE.DirectionalLight(0x243a5e, 0.18);   // river bounce, from below-front
+  const hemi = new THREE.HemisphereLight(0x4a6dab, 0x101a30, 1.05); scene.add(hemi);
+  scene.add(new THREE.AmbientLight(0x22355e, 0.46));
+  // The one warm key: low and raking from upstream-left, so it throws long shadows
+  // ACROSS the far bank toward the viewer.
+  const sun = new THREE.DirectionalLight(0xffc287, 1.95);
+  sun.position.set(-46, 92, 40);   // high over the player's left shoulder — clears the canyon rim
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  const sc = sun.shadow.camera;
+  sc.left = -70; sc.right = 70; sc.top = 56; sc.bottom = -30; sc.near = 1; sc.far = 220;
+  sun.shadow.bias = -0.0016; sun.shadow.normalBias = 0.045;
+  sun.shadow.radius = 3;
+  scene.add(sun); scene.add(sun.target);
+  sun.target.position.set(4, 4, -24);
+  // SHADOW FLAG: an occluder parked behind the camera (never in frame) that blocks the
+  // key from the near bank only. Per the brief, Jody is down in the canyon's shadow while
+  // the far wall still burns — one directional light can't do both, so we flag it.
+  (function shadowFlag() {
+    const f = new THREE.Mesh(new THREE.BoxGeometry(78, 3, 34), new THREE.MeshBasicMaterial());
+    f.position.set(-16, 30, 30);      // behind the camera (camera sits at z = +8)
+    f.castShadow = true; f.receiveShadow = false;
+    f.material.colorWrite = false; f.renderOrder = -999;
+    scene.add(f);
+  })();
+  const coolFill = new THREE.DirectionalLight(0x5a7dc0, 0.34); // sky fill from above
+  coolFill.position.set(14, 26, 22); scene.add(coolFill);
+  const bounce = new THREE.DirectionalLight(0x2c4a76, 0.22);   // river bounce, from below-front
   bounce.position.set(0, -6, 12); scene.add(bounce);
 
   /* =========================================================================
@@ -234,18 +356,22 @@
   // worldY: absolute height (drives navy -> vermillion). topY: this column's own summit,
   // so the amber/ivory sun blaze is a NARROW rim on the highest rock rather than a
   // huge white mass (which read as pale slivers on edge-on walls).
+  // ALBEDO ONLY — the rock's own sandstone colour. Shadow/warmth is produced by the
+  // lighting rig (warm key + blue sky fill), not baked in here; baking it made every
+  // surface go black once real lighting multiplied on top.
+  const ALB_DEEP = new THREE.Color(0x6f3a22);   // damp lower sandstone
+  const ALB_MID = new THREE.Color(0x9c5330);    // burnt vermillion body
+  const ALB_HI = new THREE.Color(0xbe7442);     // sun-bleached upper rock
   function cliffColor(worldY, lit, topY) {
     const h = clamp(worldY / 60, 0, 1);
-    const c = new THREE.Color(COL.indigo);
-    c.lerp(new THREE.Color(COL.vermillion), smoothstep(0.04, 0.52, h));
+    const c = ALB_DEEP.clone().lerp(ALB_MID, smoothstep(0.02, 0.42, h));
+    c.lerp(ALB_HI, smoothstep(0.45, 0.95, h) * 0.9);
     if (topY != null) {
-      const fromTop = topY - worldY;                       // 0 at the summit
-      const blaze = smoothstep(14, 2, fromTop) * clamp(topY / 34, 0, 1) * lit;
-      c.lerp(new THREE.Color(COL.amber), blaze * 0.85);
-      c.lerp(new THREE.Color(COL.ivory), smoothstep(5, 0.5, fromTop) * clamp(topY / 40, 0, 1) * lit * 0.30);
+      const fromTop = topY - worldY;
+      c.lerp(ALB_HI, smoothstep(10, 1, fromTop) * 0.35);      // weathered summits
     }
-    // recessed (shadow) columns stay cool and dark; buttresses catch the warm light
-    return new THREE.Color(COL.rockShadow).lerp(c, 0.30 + 0.70 * lit);
+    // per-column mineral variation so neighbouring columns don't read as one flat mass
+    return c.multiplyScalar(0.82 + 0.30 * lit);
   }
   // A canyon wall built from faceted vertical COLUMNS (columnar sandstone) — each a flat
   // color mass with hard edges to its neighbours, jagged tops biting into the sky strip.
@@ -268,9 +394,15 @@
         colors[k * 3] = c.r; colors[k * 3 + 1] = c.g; colors[k * 3 + 2] = c.b;
       }
       geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, fog: true }));
+      // LIT now (was unlit): the baked vertex colors act as albedo and real light +
+      // shadow does the sculpting, which is what gives the rock volume.
+      const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+        vertexColors: true, roughness: 0.97, metalness: 0.0, flatShading: true,
+        normalMap: TEX.rockNormal, normalScale: new THREE.Vector2(0.16, 0.16), fog: true,
+      }));
       m.position.set(cx, h / 2, rnd(-0.5, 0.5) * depthAmt);
       m.frustumCulled = false;
+      m.castShadow = true; m.receiveShadow = true;
       group.add(m);
     }
     group.position.copy(origin); group.rotation.y = dir;
@@ -282,8 +414,8 @@
   cliffs.add(buildCliff(210, 30, 40, new THREE.Vector3(0, FLOOR, -34), 0, 5));
   // Side walls: brought in so they rise on the left/right BEHIND the far bank, leaving a
   // central sky gap (the canyon opening) — the gang-on-the-bank composition.
-  cliffs.add(buildCliff(130, 118, 16, new THREE.Vector3(-33, FLOOR, -2), Math.PI / 2 + 0.05, 12, { warm: 0.5 }));   // left wall catches the low sun
-  cliffs.add(buildCliff(130, 118, 16, new THREE.Vector3(33, FLOOR, -2), -Math.PI / 2 - 0.05, 12, { warm: -0.15 })); // right wall in shadow
+  cliffs.add(buildCliff(150, 58, 17, new THREE.Vector3(-44, FLOOR, -4), Math.PI / 2 + 0.05, 12, { warm: 0.5 }));   // left wall catches the sun
+  cliffs.add(buildCliff(150, 58, 17, new THREE.Vector3(44, FLOOR, -4), -Math.PI / 2 - 0.05, 12, { warm: -0.15 })); // right wall shadowed
   scene.add(cliffs);
 
   /* ----- Sky strip -------------------------------------------------------- */
@@ -410,8 +542,9 @@
       p.setY(i, (y || 0) + Math.sin(x * 0.4) * 0.12 + Math.sin(x * 1.7 + z) * 0.06 + Math.max(0, -z) * 0.05);
     }
     p.needsUpdate = true; g.computeVertexNormals();
-    const m = toonSoft(color, { flatShading: true });
-    const mesh = new THREE.Mesh(g, m); mesh.position.z = zCenter; world.add(mesh);
+    const m = toonSoft(color, { flatShading: true, normalMap: TEX.stoneNormal, normalScale: new THREE.Vector2(0.3, 0.3) });
+    const mesh = new THREE.Mesh(g, m); mesh.position.z = zCenter;
+    mesh.receiveShadow = true; world.add(mesh);
     return mesh;
   }
   // Near bank (player side) — cool wet gravel; Far bank (enemies) — sandstone shelves.
@@ -422,7 +555,7 @@
   function shelf(x, z, w, d, h, color) {
     const geo = new THREE.BoxGeometry(w, h, d);
     const m = new THREE.Mesh(geo, toon(color, { flatShading: true }));
-    m.position.set(x, h / 2, z); ink(m, 0.0035); world.add(m); return m;
+    m.position.set(x, h / 2, z); ink(m, 0.0035); shad(m); world.add(m); return m;
   }
   // Low far-bank rises the outlaws stand on — NOT tall blocks (the walls are the height).
   shelf(-15, -13, 14, 7, 0.8, COL.sand);
@@ -483,13 +616,14 @@
   /* ----- Foreground cover boulder (the player's rock) --------------------- */
   (function foregroundBoulder() {
     const grp = new THREE.Group();
-    const main = makeRock(3.4, toon(COL.rockWet, { flatShading: true }), { squashY: 0.8, jitter: 0.34, ink: 0.0055 });
+    const main = makeRock(3.4, toon(0x1e2a3e, { flatShading: true, roughness: 0.72 }), { squashY: 0.8, jitter: 0.34, ink: 0.0055 });
     main.position.set(-0.4, 0.2, 0); grp.add(main);
-    const side = makeRock(2.1, toon(COL.rockShadow, { flatShading: true }), { squashY: 0.75, jitter: 0.32, ink: 0.005 });
+    const side = makeRock(2.1, toon(0x243046, { flatShading: true, roughness: 0.72 }), { squashY: 0.75, jitter: 0.32, ink: 0.005 });
     side.position.set(2.6, -0.2, 0.6); grp.add(side);
-    const small = makeRock(1.4, toon(COL.rockWet, { flatShading: true }), { squashY: 0.7, ink: 0.004 });
+    const small = makeRock(1.4, toon(0x1a2436, { flatShading: true, roughness: 0.7 }), { squashY: 0.7, ink: 0.004 });
     small.position.set(-3.0, -0.4, 0.7); grp.add(small);
     grp.position.set(-2.4, -1.7, 6.6);   // foreground cover lip, bottom-left
+    shad(grp);
     scene.add(grp);
     window.__boulder = main;
   })();
@@ -513,14 +647,14 @@
         nv.set(n.getX(i), n.getY(i), n.getZ(i));            // flat faces: normal is constant per tri
         const d = nv.dot(VM_LIGHT);
         // three hard bands — cel, not a gradient
-        const band = d > 0.45 ? 1.24 : (d > -0.05 ? 0.92 : 0.62);
+        const band = d > 0.45 ? 1.10 : (d > -0.05 ? 0.97 : 0.82);
         col.copy(base).multiplyScalar(band);
         for (let k = 0; k < 3; k++) { arr[(i + k) * 3] = col.r; arr[(i + k) * 3 + 1] = col.g; arr[(i + k) * 3 + 2] = col.b; }
       }
       g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
       return g;
     }
-    const VM_MAT = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false });
+    const VM_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.45, fog: true });
     // `flat(hex)` now returns a tag object; geometry gets baked at mesh-build time.
     const flat = (hex) => ({ __bake: hex });
     const steel = flat(0x28323f);
@@ -659,6 +793,7 @@
     flash.position.set(-0.70, 1.36, 0.28); g.add(flash);
     const fpt = new THREE.PointLight(0xffb060, 0, 5.5); fpt.position.set(-0.85, 1.38, 0.4); g.add(fpt);
     g.userData = { flash, fpt, rifle };
+    shad(g);
     return g;
   }
   const Enemies = (function () {
@@ -757,6 +892,7 @@
     glow.position.set(0.95, 1.35, 0.4); g.add(glow);
     const pt = new THREE.PointLight(0xffc070, 0, 14); pt.position.set(1.0, 1.4, 0.6); g.add(pt);
     g.position.set(-3, 2.3, -20.5); g.scale.setScalar(1.35);
+    shad(g);
     scene.add(g);
 
     let t = rnd(6, 10), state = 'watch', charge = 0;
