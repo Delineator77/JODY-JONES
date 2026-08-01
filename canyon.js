@@ -902,90 +902,91 @@
       m.position.set(x, y, z); if (rz) m.rotation.z = rz; if (rx) m.rotation.x = rx;
       g.add(m); return m;
     }
-    // legs + boots, braced behind cover
-    b(0.19, 0.62, 0.22, shirt, -0.17, 0.32, 0.02, 0.06);
-    b(0.19, 0.62, 0.22, shirt, 0.18, 0.32, -0.04, -0.08);
-    b(0.24, 0.12, 0.31, leatherM, -0.18, 0.06, 0.05);
-    b(0.24, 0.12, 0.31, leatherM, 0.19, 0.06, -0.01);
-    b(0.62, 0.10, 0.34, leatherM, 0, 0.95, 0);                       // gunbelt
-    // torso
-    const torso = lathe([[0.02, 0], [0.28, 0.02], [0.32, 0.20], [0.34, 0.46],
-      [0.29, 0.60], [0.02, 0.62]], 13, shirt);
-    torso.position.set(0, 1.02, 0); g.add(torso);
-    // THE PONCHO — a flared lathe over the torso, hem sitting mid-thigh
-    const poncho = lathe([[0.14, 0.86], [0.34, 0.80], [0.44, 0.52], [0.50, 0.16], [0.52, 0.0]], 22, ponchoMat);
-    // DRAPE: a solid of revolution reads as a traffic cone. Push the hem into hanging
-    // folds — deep pleats around the circumference, a lift where the gun arm raises the
-    // cloth, and a sag on the slack side — so it reads as heavy woven wool.
+    // --- SMOOTH FIGURE: swept tubes and spheroids, no stacked boxes ---
+    // legs, braced apart behind the cover rock
+    g.add(limb(shirt, [[-0.17, 0.94, 0.02], [-0.19, 0.60, 0.05], [-0.20, 0.26, 0.06], [-0.20, 0.10, 0.06]],
+      [0.145, 0.125, 0.098, 0.088]));
+    g.add(limb(shirt, [[0.18, 0.94, -0.02], [0.21, 0.60, -0.04], [0.22, 0.26, -0.02], [0.22, 0.10, -0.01]],
+      [0.145, 0.125, 0.098, 0.088]));
+    const bootL = blob(leatherM, 0.115, 0.075, 0.16, 14); bootL.position.set(-0.20, 0.075, 0.03); g.add(bootL);
+    const bootR = blob(leatherM, 0.115, 0.075, 0.16, 14); bootR.position.set(0.22, 0.075, 0.01); g.add(bootR);
+    // torso: a tapered sweep from hips to shoulders
+    g.add(limb(shirt, [[0, 0.92, 0], [0, 1.16, -0.012], [0, 1.40, -0.01], [0, 1.58, 0]],
+      [0.235, 0.255, 0.262, 0.222], 14));
+    const shoulders = blob(shirt, 0.345, 0.135, 0.20, 16); shoulders.position.set(0, 1.545, 0); g.add(shoulders);
+    const belt = new THREE.Mesh(new THREE.TorusGeometry(0.235, 0.042, 8, 20), leatherM);
+    belt.rotation.x = Math.PI / 2; belt.position.set(0, 0.95, 0); g.add(belt);
+
+    // --- PONCHO: a draped lathe, pleated, hitched over the gun arm ---
+    const poncho = lathe([[0.19, 0.74], [0.32, 0.70], [0.41, 0.52], [0.48, 0.22], [0.51, 0.02]], 26, ponchoMat);
     (function drape() {
-      const pp = poncho.geometry.attributes.position;
-      const v = new THREE.Vector3();
+      const pp = poncho.geometry.attributes.position, v = new THREE.Vector3();
       for (let k = 0; k < pp.count; k++) {
         v.set(pp.getX(k), pp.getY(k), pp.getZ(k));
-        const ang = Math.atan2(v.z, v.x);
-        const r = Math.hypot(v.x, v.z);
-        const down = clamp(1 - v.y / 0.86, 0, 1);          // folds deepen toward the hem
-        // pleats: alternating in/out around the circumference
-        const pleat = Math.sin(ang * 7.0) * 0.030 + Math.sin(ang * 13.0 + 1.1) * 0.014;
-        const nr = r + pleat * down * 1.5;
+        const ang = Math.atan2(v.z, v.x), r = Math.hypot(v.x, v.z);
+        const down = clamp(1 - v.y / 0.74, 0, 1);
+        const pleat = Math.sin(ang * 6.0) * 0.032 + Math.sin(ang * 11.0 + 1.1) * 0.015;
+        const nr = r + pleat * down * 1.6;
         v.x = Math.cos(ang) * nr; v.z = Math.sin(ang) * nr;
-        // the raised gun arm (his right, +x) lifts the cloth; the far side hangs lower
-        const lift = Math.max(0, Math.cos(ang)) * 0.16 * down;
-        const sag = Math.max(0, -Math.cos(ang)) * 0.06 * down;
-        v.y += lift - sag;
+        v.y += Math.max(0, Math.cos(ang)) * 0.19 * down - Math.max(0, -Math.cos(ang)) * 0.07 * down;
         pp.setXYZ(k, v.x, v.y, v.z);
       }
       pp.needsUpdate = true; poncho.geometry.computeVertexNormals();
     })();
-    poncho.position.set(0, 0.82, 0); g.add(poncho);
-    // fringe hanging off the hem
-    for (let i = 0; i < 26; i++) {
-      const a = (i / 26) * Math.PI * 2;
-      const fr = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.15, 0.022), ponchoMat);
-      fr.position.set(Math.cos(a) * 0.51, 0.75, Math.sin(a) * 0.51);
-      g.add(fr);
+    poncho.position.set(0, 0.80, 0); g.add(poncho);
+    for (let i = 0; i < 30; i++) {                       // fringe: tapered spikes, not boxes
+      const a = (i / 30) * Math.PI * 2;
+      const lift = Math.max(0, Math.cos(a)) * 0.19 - Math.max(0, -Math.cos(a)) * 0.07;
+      const x0 = Math.cos(a) * 0.52, z0 = Math.sin(a) * 0.52, y0 = 0.82 + lift;
+      g.add(limb(ponchoMat, [[x0, y0, z0], [x0 * 1.03, y0 - 0.10, z0 * 1.03], [x0 * 1.04, y0 - 0.17, z0 * 1.04]],
+        [0.016, 0.011, 0.004], 5));
     }
-    // arms: left braced on the rock, right extended with the Colt
-    b(0.16, 0.42, 0.17, shirt, -0.40, 1.28, 0.10, 0.55);
-    b(0.15, 0.40, 0.16, shirt, -0.60, 1.06, 0.34, 0.95);
-    b(0.17, 0.42, 0.18, shirt, 0.44, 1.50, 0.02, -0.62);      // raised elbow
-    b(0.155, 0.52, 0.165, shirt, 0.72, 1.47, -0.40, -0.16, -1.15);   // forearm crossing OUTSIDE the poncho contour
-    const rHand = b(0.145, 0.145, 0.16, gloveM, 0.80, 1.46, -0.74, 0, -0.3);
-    // the Colt in his fist
+
+    // --- ARMS: swept tubes. The gun arm leaves the poncho contour entirely. ---
+    g.add(limb(shirt, [[-0.30, 1.50, 0.02], [-0.46, 1.30, 0.14], [-0.58, 1.10, 0.32], [-0.62, 1.00, 0.42]],
+      [0.098, 0.088, 0.078, 0.070]));                    // braced left arm
+    const lHand = blob(gloveM, 0.072, 0.062, 0.085, 12); lHand.position.set(-0.63, 0.97, 0.46); g.add(lHand);
+    g.add(limb(shirt, [[0.30, 1.52, 0.0], [0.52, 1.52, -0.20], [0.72, 1.49, -0.52], [0.80, 1.47, -0.70]],
+      [0.100, 0.090, 0.076, 0.066]));                    // gun arm, extended clear of the body
+    const rHand = blob(gloveM, 0.075, 0.070, 0.090, 12); rHand.position.set(0.82, 1.47, -0.76); g.add(rHand);
+
+    // --- COLT, held in that fist ---
     const colt = new THREE.Group();
-    const cb = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.030, 0.34, 8), steelM);
-    cb.rotation.x = Math.PI / 2; cb.position.set(0, 0.02, -0.20); colt.add(cb);
-    const ccyl = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.10, 10), steelM);
+    const cb = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.028, 0.32, 12), steelM);
+    cb.rotation.x = Math.PI / 2; cb.position.set(0, 0.015, -0.19); colt.add(cb);
+    const ccyl = new THREE.Mesh(new THREE.CylinderGeometry(0.043, 0.043, 0.095, 12), steelM);
     ccyl.rotation.x = Math.PI / 2; colt.add(ccyl);
-    const cg = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.16, 0.075), toon(0x7a4a24, { flatShading: true }));
-    cg.position.set(0, -0.11, 0.09); cg.rotation.x = -0.4; colt.add(cg);
-    colt.position.set(0.82, 1.47, -0.88); g.add(colt);
-    const coltFlash = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.6), new THREE.MeshBasicMaterial({
+    const cgrip = limb(toon(0x7a4a24, { flatShading: false }),
+      [[0, -0.02, 0.03], [0, -0.09, 0.075], [0, -0.155, 0.115]], [0.036, 0.033, 0.026], 8);
+    colt.add(cgrip);
+    colt.position.set(0.86, 1.47, -0.88); colt.rotation.y = -0.10; g.add(colt);
+    const coltFlash = new THREE.Mesh(new THREE.PlaneGeometry(0.55, 0.55), new THREE.MeshBasicMaterial({
       map: TEX.flash, color: 0xffd9a0, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
-    coltFlash.position.set(0.82, 1.49, -1.14); g.add(coltFlash);
-    const coltLight = new THREE.PointLight(0xffa848, 0, 8); coltLight.position.set(0.82, 1.50, -1.2); g.add(coltLight);
-    // neck, head, blond hair under a black hat
-    b(0.16, 0.12, 0.16, skinM, 0, 1.62, 0);
-    const head = b(0.235, 0.25, 0.245, skinM, 0, 1.815, 0);
-    b(0.185, 0.085, 0.205, skinM, 0, 1.675, -0.012);          // jaw wedge, narrower than skull
-    // PROFILE: at cinematic range the head is large enough that a blank box reads as a
-    // mannequin. Brow, nose, jaw and stubble give him a face in three-quarter view.
-    b(0.245, 0.045, 0.06, skinM, 0, 1.875, -0.145);                  // brow ridge
-    b(0.075, 0.075, 0.085, skinM, 0.02, 1.815, -0.165);              // nose
-    b(0.20, 0.075, 0.05, toon(0x6f4630, { flatShading: true }), 0, 1.712, -0.135);  // jaw / stubble
-        b(0.055, 0.10, 0.09, skinM, 0.135, 1.80, -0.01);                 // ears
-    b(0.055, 0.10, 0.09, skinM, -0.135, 1.80, -0.01);
-    // blond hair: mass under the hat plus a shoulder-length fall, shaped not blocky
-    b(0.275, 0.15, 0.275, hairM, 0, 1.875, -0.005);
-    b(0.315, 0.34, 0.17, hairM, 0, 1.655, 0.105);                    // fall down his back
-    b(0.115, 0.30, 0.115, hairM, 0.150, 1.655, 0.02);                // side locks
-    b(0.115, 0.30, 0.115, hairM, -0.150, 1.655, 0.02);
-    b(0.30, 0.13, 0.15, hairM, 0, 1.505, 0.085);                     // ends OVER the poncho collar
-    const brim = lathe([[0.03, 0.045], [0.16, 0.034], [0.26, 0.012], [0.33, 0], [0.345, 0.05]], 16, hatM);
-    brim.position.set(0, 1.94, -0.01); brim.rotation.z = 0.09; brim.scale.set(1, 1, 1.12); g.add(brim);
-    const crown = lathe([[0.02, 0], [0.155, 0.012], [0.175, 0.13], [0.135, 0.25], [0.02, 0.27]], 12, hatM);
-    crown.position.set(0, 1.95, 0); crown.rotation.z = 0.09; g.add(crown);
-    b(0.31, 0.042, 0.31, toon(0x3a2416, { flatShading: true }), 0, 2.00, 0);   // hat band
+    coltFlash.position.set(0.86, 1.49, -1.12); g.add(coltFlash);
+    const coltLight = new THREE.PointLight(0xffa848, 0, 8); coltLight.position.set(0.86, 1.50, -1.18); g.add(coltLight);
+
+    // --- HEAD: spheroid skull tapering to a jaw, blond hair over the collar ---
+    g.add(limb(skinM, [[0, 1.52, 0], [0, 1.62, -0.01]], [0.078, 0.070], 10));   // neck
+    const skull = blob(skinM, 0.118, 0.132, 0.126, 18); skull.position.set(0, 1.755, -0.005); g.add(skull);
+    const jaw = blob(skinM, 0.092, 0.072, 0.104, 14); jaw.position.set(0, 1.665, -0.022); g.add(jaw);
+    const nose = blob(skinM, 0.030, 0.034, 0.045, 10); nose.position.set(0, 1.745, -0.128); g.add(jaw), g.add(nose);
+    const brow = blob(skinM, 0.112, 0.026, 0.045, 12); brow.position.set(0, 1.808, -0.104); g.add(brow);
+    const stubble = blob(toon(0x6f4630, { flatShading: false }), 0.088, 0.052, 0.098, 14);
+    stubble.position.set(0, 1.648, -0.030); g.add(stubble);
+    // hair: a rounded mass under the hat plus a fall over the collar
+    const hairTop = blob(hairM, 0.132, 0.098, 0.140, 16); hairTop.position.set(0, 1.808, 0.008); g.add(hairTop);
+    const hairBack = blob(hairM, 0.145, 0.160, 0.098, 16); hairBack.position.set(0, 1.660, 0.088); g.add(hairBack);
+    const hairEnds = blob(hairM, 0.152, 0.075, 0.088, 16); hairEnds.position.set(0, 1.528, 0.072); g.add(hairEnds);
+    g.add(limb(hairM, [[0.128, 1.775, 0.03], [0.140, 1.660, 0.05], [0.132, 1.560, 0.06]], [0.052, 0.058, 0.040], 8));
+    g.add(limb(hairM, [[-0.128, 1.775, 0.03], [-0.140, 1.660, 0.05], [-0.132, 1.560, 0.06]], [0.052, 0.058, 0.040], 8));
+
+    // --- HAT: lathe brim with a curl, pinched crown, tilted ---
+    const brim = lathe([[0.03, 0.045], [0.16, 0.036], [0.26, 0.014], [0.325, 0.004], [0.342, 0.052]], 22, hatM);
+    brim.position.set(0, 1.905, -0.012); brim.rotation.z = 0.10; brim.scale.set(1, 1, 1.10); g.add(brim);
+    const crown = lathe([[0.02, 0], [0.150, 0.014], [0.170, 0.115], [0.128, 0.235], [0.02, 0.255]], 20, hatM);
+    crown.position.set(0, 1.915, 0); crown.rotation.z = 0.10; g.add(crown);
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.158, 0.020, 8, 22), toon(0x3a2416, { flatShading: false }));
+    band.rotation.x = Math.PI / 2; band.position.set(0, 1.955, 0); band.rotation.z = 0.10; g.add(band);
 
     // CHARACTER KEY: he stands inside the canyon's shadow, so skylight alone flattens
     // hair, skin, poncho and gun into one value. A dedicated short-throw warm key (the
@@ -1131,6 +1132,50 @@
   // An outlaw built silhouette-first: wide hat brim, coat shoulders flaring to a skirt,
   // legs apart, rifle up across the body. Bold simple masses per the production rules.
   // Lathe profile helper — smooth, shaped volumes (coat, hat crown) from a silhouette.
+  /* --- ORGANIC FIGURE GEOMETRY ---------------------------------------------
+     Characters built from stacked boxes read as toys no matter how they're shaded.
+     These build smooth, tapered, posed forms instead: limbs are swept tubes along a
+     spline with a per-point radius, masses are deformable spheroids. ------------- */
+  function tubeTaper(pts, radii, radialSeg, tubularSeg) {
+    const curve = new THREE.CatmullRomCurve3(pts.map((p) => new THREE.Vector3(p[0], p[1], p[2])));
+    const TS = tubularSeg || 20, RS = radialSeg || 10;
+    const frames = curve.computeFrenetFrames(TS, false);
+    const position = [], normal = [], index = [];
+    const P = new THREE.Vector3(), N = new THREE.Vector3(), B = new THREE.Vector3();
+    for (let i = 0; i <= TS; i++) {
+      const t = i / TS;
+      curve.getPointAt(t, P);
+      N.copy(frames.normals[i]); B.copy(frames.binormals[i]);
+      // radius profile sampled along the sweep
+      const f = t * (radii.length - 1), i0 = Math.floor(f), i1 = Math.min(radii.length - 1, i0 + 1);
+      const r = lerp(radii[i0], radii[i1], f - i0);
+      for (let j = 0; j <= RS; j++) {
+        const v = (j / RS) * Math.PI * 2, cs = Math.cos(v), sn = Math.sin(v);
+        const nx = cs * N.x + sn * B.x, ny = cs * N.y + sn * B.y, nz = cs * N.z + sn * B.z;
+        position.push(P.x + nx * r, P.y + ny * r, P.z + nz * r);
+        normal.push(nx, ny, nz);
+      }
+    }
+    for (let i = 1; i <= TS; i++) for (let j = 1; j <= RS; j++) {
+      const a = (RS + 1) * (i - 1) + (j - 1), b = (RS + 1) * i + (j - 1);
+      const c = (RS + 1) * i + j, d = (RS + 1) * (i - 1) + j;
+      index.push(a, b, d, b, c, d);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(position, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(normal, 3));
+    g.setIndex(index);
+    return g;
+  }
+  function limb(mat, pts, radii, seg) {
+    return new THREE.Mesh(tubeTaper(pts, radii, seg || 10, 22), mat);
+  }
+  // A spheroid that can be squashed and bent — heads, shoulders, hands, boots.
+  function blob(mat, rx, ry, rz, detail) {
+    const g = new THREE.SphereGeometry(1, detail || 16, (detail || 16) * 0.7);
+    g.scale(rx, ry, rz);
+    return new THREE.Mesh(g, mat);
+  }
   function lathe(profile, seg, mat) {
     const pts = profile.map((p) => new THREE.Vector2(p[0], p[1]));
     return new THREE.Mesh(new THREE.LatheGeometry(pts, seg || 12), mat);
@@ -1140,69 +1185,66 @@
     const g = new THREE.Group();
     const V = variant || 0;
     const build = [1.0, 1.09, 0.94, 1.04, 0.97][V % 5];
-    const cloth = toon(color, { flatShading: true });
-    const dark = toon(COL.cloth, { flatShading: true });
-    const skin = toon(COL.skin, { flatShading: true });
-    const hat = toon(COL.hat, { flatShading: true });
-    const scarf = toon(scarfCol == null ? COL.olive : scarfCol, { flatShading: true });
-    const steel = toonMetal(0x252a35, { flatShading: true });
-    const wood = toon(0x4a2c14, { flatShading: true });
-    const vest = toon([0x2b2333, 0x33291f, 0x24303f, 0x392a2a, 0x2a3327][V % 5], { flatShading: true });
-    const glove = toon(0x4a3524, { flatShading: true });
-    function b(w, h, d, mat, x, y, z, rz) {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-      m.position.set(x, y, z); if (rz) m.rotation.z = rz; g.add(m); return m;
-    }
-    // stance: legs planted at slightly different angles per man
-    const stance = [0.10, 0.16, 0.06, 0.13, 0.09][V % 5];
-    b(0.17, 0.54, 0.20, dark, -0.15, 0.28, 0, stance);
-    b(0.17, 0.54, 0.20, dark, 0.16, 0.28, 0.02, -stance * 0.6);
-    b(0.22, 0.11, 0.28, dark, -0.18, 0.05, 0.03);
-    b(0.22, 0.11, 0.28, dark, 0.19, 0.05, 0.05);
-    // coat: shaped lathe silhouette, waist pinched, hem flaring
-    const coat = lathe([[0.02, 0], [0.30, 0.02], [0.40, 0.10], [0.42, 0.30],
-      [0.34, 0.52], [0.30, 0.70], [0.33, 0.86], [0.38, 1.00], [0.30, 1.06], [0.02, 1.08]], 13, cloth);
+    const cloth = toon(color, { flatShading: false });
+    const dark = toon(COL.cloth, { flatShading: false });
+    const skin = toon(COL.skin, { flatShading: false });
+    const hat = toon(COL.hat, { flatShading: false });
+    const scarf = toon(scarfCol == null ? COL.olive : scarfCol, { flatShading: false });
+    const steel = toon(0x6b6a66, { flatShading: false, roughness: 0.4, metalness: 0.6 });
+    const wood = toon(0x4a2c14, { flatShading: false });
+    const vest = toon([0x2b2333, 0x33291f, 0x24303f, 0x392a2a, 0x2a3327][V % 5], { flatShading: false });
+    const glove = toon(0x6a4e2c, { flatShading: false });
+    const stance = [0.06, 0.10, 0.03, 0.08, 0.05][V % 5];
+    // legs as swept tubes, planted at slightly different angles per man
+    g.add(limb(dark, [[-0.14, 0.90, 0], [-0.16 - stance, 0.56, 0.02], [-0.17 - stance, 0.22, 0.03], [-0.17 - stance, 0.09, 0.03]],
+      [0.115, 0.098, 0.080, 0.072], 8));
+    g.add(limb(dark, [[0.15, 0.90, 0], [0.17 + stance * 0.6, 0.56, -0.01], [0.18 + stance * 0.6, 0.22, 0.01], [0.18 + stance * 0.6, 0.09, 0.01]],
+      [0.115, 0.098, 0.080, 0.072], 8));
+    const bL = blob(dark, 0.095, 0.058, 0.135, 12); bL.position.set(-0.17 - stance, 0.06, 0.03); g.add(bL);
+    const bR = blob(dark, 0.095, 0.058, 0.135, 12); bR.position.set(0.18 + stance * 0.6, 0.06, 0.02); g.add(bR);
+    // coat: a shaped lathe, waist pinched, hem flaring
+    const coat = lathe([[0.03, 0], [0.26, 0.02], [0.36, 0.10], [0.38, 0.28],
+      [0.30, 0.50], [0.27, 0.68], [0.30, 0.84], [0.34, 0.98], [0.24, 1.04], [0.03, 1.06]], 18, cloth);
     coat.position.set(0, 0.52, 0); coat.scale.set(build, 1, build * 0.92); g.add(coat);
-    b(0.62, 0.09, 0.36, dark, 0, 0.92, 0);
-    b(0.10, 0.13, 0.10, toon(0xb08a3c, { flatShading: true }), 0, 0.92, 0.19);
-    b(0.14, 0.20, 0.11, dark, 0.27, 0.83, 0.14, 0.2);
-    b(0.26, 0.44, 0.30, vest, 0, 1.32, 0.06);
-    const torso = lathe([[0.02, 0], [0.30, 0.01], [0.34, 0.16], [0.36, 0.40],
-      [0.30, 0.56], [0.02, 0.58]], 13, cloth);
-    torso.position.set(0, 1.12, 0); torso.scale.set(build, 1, build * 0.9); g.add(torso);
-    b(0.70 * build, 0.13, 0.34, cloth, 0, 1.62, 0);
-    b(0.28, 0.14, 0.30, scarf, 0, 1.71, 0.03);
-    b(0.20, 0.10, 0.24, scarf, 0, 1.65, 0.14);
-    b(0.235, 0.26, 0.235, skin, 0, 1.87, 0);
-    if (V % 3 === 0) b(0.22, 0.10, 0.20, toon(0x3a2a20, { flatShading: true }), 0, 1.78, 0.03);
-    // brim: shallow cone so it curls rather than reading as a flat disc
-    const brim = lathe([[0.03, 0.045], [0.20, 0.035], [0.34, 0.012], [0.44, 0], [0.46, 0.05]], 14, hat);
-    brim.position.set(0, 1.98, 0.01); g.add(brim);
-    const crown = lathe([[0.02, 0], [0.19, 0.01], [0.21, 0.14], [0.185, 0.26], [0.02, 0.28]], 12, hat);
-    crown.position.set(0, 1.99, 0); g.add(crown);
-    b(0.40, 0.045, 0.40, toon(0x1e222e, { flatShading: true }), 0, 2.04, 0);
-    // arms: upper + forearm, angled per pose
-    const aim = [0.34, 0.42, 0.28, 0.38, 0.31][V % 5];
-    b(0.155, 0.40, 0.16, cloth, -0.36 * build, 1.40, 0.06, aim);
-    b(0.145, 0.34, 0.15, cloth, -0.46 * build, 1.15, 0.20, aim * 1.5);
-    b(0.155, 0.38, 0.16, cloth, 0.36 * build, 1.42, 0.10, -aim * 0.8);
-    b(0.14, 0.30, 0.15, cloth, 0.30 * build, 1.20, 0.24, -aim * 0.4);
-    b(0.115, 0.10, 0.13, glove, -0.50 * build, 1.00, 0.28);
-    b(0.115, 0.10, 0.13, glove, 0.27 * build, 1.06, 0.30);
-    // lever rifle shouldered across
+    const belt = new THREE.Mesh(new THREE.TorusGeometry(0.30, 0.036, 7, 16), dark);
+    belt.rotation.x = Math.PI / 2; belt.position.set(0, 0.92, 0); g.add(belt);
+    const holster = blob(dark, 0.065, 0.10, 0.055, 10); holster.position.set(0.28, 0.83, 0.10); g.add(holster);
+    const chest = blob(vest, 0.14, 0.21, 0.13, 14); chest.position.set(0, 1.30, 0.05); g.add(chest);
+    // torso + shoulders
+    g.add(limb(cloth, [[0, 1.06, 0], [0, 1.30, -0.01], [0, 1.52, 0], [0, 1.62, 0]],
+      [0.255 * build, 0.278 * build, 0.268 * build, 0.222 * build], 12));
+    const sh = blob(cloth, 0.335 * build, 0.115, 0.185, 14); sh.position.set(0, 1.60, 0); g.add(sh);
+    const nk = blob(scarf, 0.105, 0.070, 0.105, 12); nk.position.set(0, 1.70, 0.01); g.add(nk);
+    const knot = blob(scarf, 0.075, 0.085, 0.055, 10); knot.position.set(0, 1.655, 0.11); g.add(knot);
+    // head + hat
+    g.add(limb(skin, [[0, 1.66, 0], [0, 1.74, 0]], [0.062, 0.058], 8));
+    const skull = blob(skin, 0.105, 0.118, 0.112, 14); skull.position.set(0, 1.855, 0); g.add(skull);
+    const jaw = blob(skin, 0.082, 0.062, 0.092, 12); jaw.position.set(0, 1.775, -0.018); g.add(jaw);
+    if (V % 3 === 0) { const bd = blob(toon(0x3a2a20, { flatShading: false }), 0.084, 0.055, 0.09, 12); bd.position.set(0, 1.762, -0.022); g.add(bd); }
+    const brim = lathe([[0.03, 0.04], [0.15, 0.032], [0.24, 0.012], [0.30, 0.002], [0.315, 0.046]], 18, hat);
+    brim.position.set(0, 1.965, -0.008); brim.rotation.z = 0.06 + (V % 3) * 0.03; g.add(brim);
+    const crown = lathe([[0.02, 0], [0.135, 0.012], [0.155, 0.10], [0.118, 0.212], [0.02, 0.23]], 16, hat);
+    crown.position.set(0, 1.975, 0); crown.rotation.z = 0.06 + (V % 3) * 0.03; g.add(crown);
+    // arms up on the rifle
+    const aim = [0.0, 0.05, -0.04, 0.03, -0.02][V % 5];
+    g.add(limb(cloth, [[-0.30 * build, 1.55, 0.02], [-0.42 * build, 1.36, 0.14], [-0.50 * build, 1.22, 0.28]],
+      [0.082, 0.074, 0.066], 8));
+    g.add(limb(cloth, [[0.30 * build, 1.56, 0.02], [0.36 * build, 1.38, 0.16], [0.32 * build, 1.26, 0.30]],
+      [0.082, 0.074, 0.066], 8));
+    const hL = blob(glove, 0.058, 0.052, 0.068, 10); hL.position.set(-0.52 * build, 1.20, 0.32); g.add(hL);
+    const hR = blob(glove, 0.058, 0.052, 0.068, 10); hR.position.set(0.31 * build, 1.24, 0.33); g.add(hR);
+    // lever rifle
     const rifle = new THREE.Group();
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.030, 1.30, 7), steel);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.021, 0.024, 1.24, 10), steel);
     barrel.rotation.z = Math.PI / 2; rifle.add(barrel);
-    const mag = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 1.0, 6), steel);
-    mag.rotation.z = Math.PI / 2; mag.position.set(0.06, -0.045, 0); rifle.add(mag);
-    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.50, 0.125, 0.08), wood);
-    stock.position.set(0.63, -0.05, 0); stock.rotation.z = -0.07; rifle.add(stock);
-    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.09, 0.07), wood);
-    grip.position.set(-0.30, -0.02, 0); rifle.add(grip);
-    const lever = new THREE.Mesh(new THREE.TorusGeometry(0.055, 0.014, 5, 8, Math.PI * 1.2), steel);
-    lever.rotation.y = Math.PI / 2; lever.position.set(0.28, -0.10, 0); rifle.add(lever);
-    rifle.position.set(-0.08, 1.16, 0.30); rifle.rotation.y = -0.12;
-    rifle.rotation.z = 0.06 + (V % 3) * 0.05;
+    const mag = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.94, 8), steel);
+    mag.rotation.z = Math.PI / 2; mag.position.set(0.06, -0.038, 0); rifle.add(mag);
+    const stock = limb(wood, [[0.42, -0.01, 0], [0.66, -0.05, 0], [0.86, -0.085, 0]], [0.05, 0.058, 0.044], 8);
+    rifle.add(stock);
+    const lever = new THREE.Mesh(new THREE.TorusGeometry(0.048, 0.011, 6, 10, Math.PI * 1.2), steel);
+    lever.rotation.y = Math.PI / 2; lever.position.set(0.26, -0.085, 0); rifle.add(lever);
+    rifle.position.set(-0.10, 1.22, 0.32); rifle.rotation.y = -0.12;
+    rifle.rotation.z = 0.05 + aim;
     g.add(rifle);
     // muzzle flash at the barrel tip
     const flash = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.95), new THREE.MeshBasicMaterial({ map: TEX.flash, color: 0xffd9a0, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
@@ -1567,8 +1609,8 @@
   // the canyon receding to the left — the composition of the film reference stills.
   let cine = location.search.indexOf('cine') >= 0;
   const CINE = {
-    offset: new THREE.Vector3(-1.02, 1.86, 2.62),   // behind + left of Jody's shoulder
-    look: new THREE.Vector3(0.10, 1.42, -15.0),     // aim point across the river
+    offset: new THREE.Vector3(-1.14, 2.00, 3.05),   // behind + left of Jody's shoulder
+    look: new THREE.Vector3(0.05, 1.30, -15.0),     // aim point across the river
     fov: 46,
   };
   const FPS_FOV = 58;   // freeze look at authored defaults for screenshots
