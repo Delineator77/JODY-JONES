@@ -55,7 +55,7 @@
       fill: 0x5a7dc0, fillI: 0.34, bounce: 0x2c4a76, bounceI: 0.22,
       fog: 0x33344f, fogDensity: 0.0115,
       sky: [0xe89a52, 0x8a5a55, 0x141f38],
-      river: 0xf0993e, rockTint: 0xffffff, rim: 0xff9c4a, rimStrength: 1.15,
+      river: 0xf0993e, rockTint: 0xffffff, rim: 0xff9c4a, rimStrength: 1.15, waterDeep: 0x0c1424, waterLit: 0x142038,
       grade: { shadow: 0x1b2a4e, light: 0xffd7a2, tint: 0.34, sat: 1.24 },
       mist: [0x7a5a4c, 0x5f4a48, 0x47536e, 0x333f5c], mistI: 1.0,
       bloom: 0.35,
@@ -69,7 +69,7 @@
       fill: 0x3f5f9c, fillI: 0.20, bounce: 0x1c3157, bounceI: 0.16,
       fog: 0x16203a, fogDensity: 0.0095,
       sky: [0x40567f, 0x22304f, 0x080d1c],
-      river: 0xcfe0f5, rockTint: 0x7d93d6, rim: 0x9fc4f5, rimStrength: 0.95,
+      river: 0xcfe0f5, rockTint: 0x7d93d6, rim: 0x9fc4f5, rimStrength: 0.95, waterDeep: 0x0a1220, waterLit: 0x101c32,
       grade: { shadow: 0x101d3c, light: 0xcadcf6, tint: 0.42, sat: 1.10 },
       mist: [0x3d4d74, 0x344263, 0x293450, 0x1e2840], mistI: 0.85,
       bloom: 0.5,
@@ -83,7 +83,7 @@
     fill: 0x88a8d8, fillI: 0.3, bounce: 0x54628c, bounceI: 0.25,
     fog: 0x6a7ba0, fogDensity: 0.006,
     sky: [0x7fb0dd, 0x4489cc, 0x1e63b0],
-    river: 0xbfe0f2, rockTint: 0xffffff, rim: 0xffd9a0, rimStrength: 0.7,
+    river: 0xbfe0f2, rockTint: 0xffffff, rim: 0xffd9a0, rimStrength: 0.7, waterDeep: 0x1c3450, waterLit: 0x2c4a68,
     grade: { shadow: 0x3b3560, light: 0xffd9a8, tint: 0.3, sat: 1.42 },
     mist: [0x8a7a88, 0x7a6f88, 0x6a7a9c, 0x5a6a8c], mistI: 0.5,
     bloom: 0.25,
@@ -167,7 +167,7 @@
     uniforms: {
       tDiffuse: { value: null },
       uRes: { value: new THREE.Vector2(innerWidth, innerHeight) },
-      uStrength: { value: 0.92 }, uThreshold: { value: 0.115 },
+      uStrength: { value: 0.97 }, uThreshold: { value: 0.11 },
       uInk: { value: new THREE.Color(0x0a1020) },
     },
     vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
@@ -175,7 +175,7 @@
       'uniform sampler2D tDiffuse; uniform vec2 uRes; uniform float uStrength; uniform float uThreshold; uniform vec3 uInk; varying vec2 vUv;\n' +
       'float lum(vec3 c){ return dot(c, vec3(0.299,0.587,0.114)); }\n' +
       'void main(){\n' +
-      '  vec2 px = 1.0/uRes;\n' +
+      '  vec2 px = 1.4/uRes;\n' +
       '  float tl=lum(texture2D(tDiffuse,vUv+px*vec2(-1.,-1.)).rgb), t=lum(texture2D(tDiffuse,vUv+px*vec2(0.,-1.)).rgb), tr=lum(texture2D(tDiffuse,vUv+px*vec2(1.,-1.)).rgb);\n' +
       '  float l=lum(texture2D(tDiffuse,vUv+px*vec2(-1.,0.)).rgb), r=lum(texture2D(tDiffuse,vUv+px*vec2(1.,0.)).rgb);\n' +
       '  float bl=lum(texture2D(tDiffuse,vUv+px*vec2(-1.,1.)).rgb), bm=lum(texture2D(tDiffuse,vUv+px*vec2(0.,1.)).rgb), br=lum(texture2D(tDiffuse,vUv+px*vec2(1.,1.)).rgb);\n' +
@@ -396,8 +396,8 @@
   // Fractured river boulder. Displacement is a deterministic function of the vertex
   // DIRECTION (not per-vertex random), so the duplicated verts of a non-indexed
   // icosahedron stay welded — random jitter tore them into glass shards.
-  function rockGeo(radius, squashY, jitter, seed) {
-    const g = new THREE.IcosahedronGeometry(radius, 2);
+  function rockGeo(radius, squashY, jitter, seed, detail) {
+    const g = new THREE.IcosahedronGeometry(radius, detail == null ? 2 : detail);
     const p = g.attributes.position;
     const s = seed == null ? rnd(0, 40) : seed;
     const v = new THREE.Vector3();
@@ -423,7 +423,7 @@
   }
   function makeRock(radius, mat, opts) {
     opts = opts || {};
-    const geo = rockGeo(radius, opts.squashY == null ? 0.7 : opts.squashY, opts.jitter == null ? 0.28 : opts.jitter);
+    const geo = rockGeo(radius, opts.squashY == null ? 0.7 : opts.squashY, opts.jitter == null ? 0.28 : opts.jitter, undefined, opts.detail);
     const m = new THREE.Mesh(geo, mat);
     m.material.flatShading = true;
     m.material.needsUpdate = true;
@@ -665,10 +665,11 @@
       const t = new THREE.CanvasTexture(c); return t;
     }
     const texWarm = cloudTexture(true), texCool = cloudTexture(false);
-    const specs = [
-      [-46, 26, -95, 42, texWarm, 0.95], [10, 34, -110, 54, texCool, 0.85],
-      [52, 24, -90, 38, texWarm, 0.9], [-14, 20, -78, 30, texCool, 0.8], [34, 40, -120, 48, texCool, 0.75],
-    ];
+    const specs = [];
+    for (let i = 0; i < 11; i++) {
+      specs.push([rnd(-170, 170), rnd(48, 82), rnd(-70, -125), rnd(38, 72),
+        i % 3 === 0 ? texWarm : texCool, rnd(0.72, 0.95)]);
+    }
     for (const s of specs) {
       const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: s[4], transparent: true, opacity: s[5], depthWrite: false, fog: false }));
       spr.position.set(s[0], s[1], s[2]); spr.scale.set(s[3] * 1.9, s[3], 1);
@@ -680,7 +681,8 @@
   /* =========================================================================
      RIVER  — stylized cel water shader (broad masses, amber sun band, foam)
      ========================================================================= */
-  const riverUniforms = { uTime: { value: 0 }, uSun: { value: new THREE.Color(TOD.river) } };
+  const riverUniforms = { uTime: { value: 0 }, uSun: { value: new THREE.Color(TOD.river) },
+    uDeep: { value: new THREE.Color(TOD.waterDeep || 0x0c1424) }, uLit: { value: new THREE.Color(TOD.waterLit || 0x142038) } };
   (function river() {
     const g = new THREE.PlaneGeometry(360, 15, 200, 24);
     g.rotateX(-Math.PI / 2);
@@ -696,7 +698,7 @@
         '  #include <fog_vertex>\n' +
         '}',
       fragmentShader:
-        'uniform float uTime; uniform vec3 uSun; varying vec2 vP; varying float vWave;\n' +
+        'uniform float uTime; uniform vec3 uSun; uniform vec3 uDeep; uniform vec3 uLit; varying vec2 vP; varying float vWave;\n' +
         '#include <fog_pars_fragment>\n' +
         'float hash(vec2 p){ return fract(sin(dot(p, vec2(41.3,289.1)))*43758.5453); }\n' +
         'float vnoise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);\n' +
@@ -706,8 +708,8 @@
         '  vec2 flow = vec2(uTime*1.4, uTime*0.25);\n' +
         '  float n = fbm(vP*vec2(0.9,1.7) - flow);\n' +
         '  float band = floor(n*4.0)/4.0;\n' +               // posterized broad masses
-        '  vec3 deep = vec3(0.048,0.078,0.141);\n' +   // midnight navy channel
-        '  vec3 lit  = vec3(0.078,0.126,0.227);\n' +   // lit ripple
+        '  vec3 deep = uDeep;\n' +   // midnight navy channel
+        '  vec3 lit  = uLit;\n' +   // lit ripple
         '  vec3 col = mix(deep, lit, band*0.85 + 0.15);\n' +
         '  float f = fbm(vP*vec2(2.3,4.0) - flow*2.2);\n' +
         '  float caps = smoothstep(0.60,0.82,f);\n' +
@@ -814,14 +816,13 @@
     }
     // FORDS — pale shallow bars crossing the river: the two crossings of The Run
     for (const fx of [-60, 115]) {
-      const bar = blob(toonSoft(0x8a6f4a, { flatShading: false }), 8.0, 0.42, 6.0, 14);
+      const bar = blob(toonSoft(0x63492c, { flatShading: false }), 8.0, 0.42, 6.0, 14);
       bar.position.set(fx, 0.02, -1.2); bar.receiveShadow = true; world.add(bar);
     }
-    // THE NARROWS — big masses jut in from both banks at x ~ 64, pinching the corridor
-    for (const nn of [[59, -8.5, 5.5, 1.5], [70, -6.0, 4.2, 1.2], [57, 12.5, 5.0, 1.3], [69, 14.5, 6.0, 1.6]]) {
-      const m = makeRock(nn[2], toon(0x8a4d2c, { flatShading: true }), { squashY: nn[3] });
-      m.position.set(nn[0], nn[2] * 0.42, nn[1]); world.add(m);
-    }
+    // THE NARROWS — butte clusters jut in from both banks at x ~ 64, pinching the
+    // corridor. Same former as the canyon walls so the pinch speaks the wall language.
+    world.add(buildCliff(30, 22, 5, new THREE.Vector3(64, FLOOR, -10), 0.35, 7, { warm: 0.35 }));
+    world.add(buildCliff(26, 17, 4, new THREE.Vector3(62, FLOOR, 14), Math.PI - 0.3, 6, { warm: -0.15 }));
   }
   scatterRocks();
 
@@ -1581,7 +1582,7 @@
   function dropStone() {
     const g = new THREE.SphereGeometry(rnd(0.06, 0.14), 5, 4);
     const m = new THREE.Mesh(g, toon(COL.rockMid, { flatShading: true }));
-    m.position.set(rnd(-150, 150), rnd(20, 40), rnd(-28, -14));
+    m.position.set(rnd(-150, 150), rnd(7, 16), rnd(-27, -21));
     m.userData = { vy: 0 }; scene.add(m); stones.push(m);
   }
   let stoneTimer = 3;
