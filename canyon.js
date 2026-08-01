@@ -55,7 +55,7 @@
       fill: 0x5a7dc0, fillI: 0.34, bounce: 0x2c4a76, bounceI: 0.22,
       fog: 0x33344f, fogDensity: 0.0115,
       sky: [0xe89a52, 0x8a5a55, 0x141f38],
-      river: 0xf0993e, rockTint: 0xffffff,
+      river: 0xf0993e, rockTint: 0xffffff, rim: 0xff9c4a, rimStrength: 1.15,
       grade: { shadow: 0x1b2a4e, light: 0xffd7a2, tint: 0.34, sat: 1.24 },
       mist: [0xe0925a, 0xc07c58, 0x74849f, 0x4a5c85], mistI: 1.0,
       bloom: 0.35,
@@ -69,7 +69,7 @@
       fill: 0x3f5f9c, fillI: 0.20, bounce: 0x1c3157, bounceI: 0.16,
       fog: 0x16203a, fogDensity: 0.0095,
       sky: [0x40567f, 0x22304f, 0x080d1c],
-      river: 0xcfe0f5, rockTint: 0x7d93d6,
+      river: 0xcfe0f5, rockTint: 0x7d93d6, rim: 0x9fc4f5, rimStrength: 0.95,
       grade: { shadow: 0x101d3c, light: 0xcadcf6, tint: 0.42, sat: 1.10 },
       mist: [0x50699c, 0x44578a, 0x36466e, 0x27334f], mistI: 0.85,
       bloom: 0.5,
@@ -114,8 +114,8 @@
   const gradePass = new THREE.ShaderPass({
     uniforms: {
       tDiffuse: { value: null },
-      uBands: { value: 7.0 },        // luminance steps (lower = flatter//more graphic)
-      uMix: { value: 0.72 },         // how strongly to posterize
+      uBands: { value: 6.0 },        // luminance steps (lower = flatter//more graphic)
+      uMix: { value: 0.80 },         // how strongly to posterize
       uSat: { value: TOD.grade.sat },
       uShadowTint: { value: new THREE.Color(TOD.grade.shadow) },
       uLightTint: { value: new THREE.Color(TOD.grade.light) },
@@ -153,7 +153,7 @@
     uniforms: {
       tDiffuse: { value: null },
       uRes: { value: new THREE.Vector2(innerWidth, innerHeight) },
-      uStrength: { value: 0.80 }, uThreshold: { value: 0.30 },
+      uStrength: { value: 0.92 }, uThreshold: { value: 0.115 },
       uInk: { value: new THREE.Color(0x0a1020) },
     },
     vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
@@ -168,7 +168,7 @@
       '  float gx = -tl -2.0*l -bl + tr + 2.0*r + br;\n' +
       '  float gy = -tl -2.0*t -tr + bl + 2.0*bm + br;\n' +
       '  float mag = sqrt(gx*gx + gy*gy);\n' +
-      '  float edge = smoothstep(uThreshold, uThreshold+0.45, mag);\n' +
+      '  float edge = smoothstep(uThreshold, uThreshold+0.22, mag);\n' +
       '  vec4 base = texture2D(tDiffuse, vUv);\n' +
       '  // never draw ink INSIDE a glow (muzzle flashes, sun glints) — a soft radial\n' +
       '  // otherwise picks up a dark Sobel ring and reads as a dirty disc.\n' +
@@ -195,17 +195,52 @@
   const RAMP_METAL = toonRamp([40, 95, 150, 195]); // dark metal — never blows to white
   function toonMetal(color, opts) { return new THREE.MeshToonMaterial(Object.assign({ color: color, gradientMap: RAMP_METAL }, opts || {})); }
 
-  // Lit, shadow-capable surfaces. The illustrated read comes from the palette + the
-  // posterize/ink post passes, NOT from flattening the lighting itself.
+  /* --- WARM RIM LIGHT -------------------------------------------------------
+     In the reference illustrations every form carries a bright warm edge where it
+     turns away from the key. That single cue does more than any texture to make a
+     render read as drawn. Injected into MeshStandardMaterial via onBeforeCompile:
+     a fresnel edge term, gated so it only fires on the side facing the key light,
+     and hard-stepped so it reads as a painted stroke rather than a soft glow. --- */
+  const RIM = {
+    color: new THREE.Color(TOD.rim || 0xffb066),
+    dir: new THREE.Vector3(),        // world-space direction TO the key light
+    strength: TOD.rimStrength == null ? 0.85 : TOD.rimStrength,
+  };
+  const rimMaterials = [];
+  function addRim(mat, mul) {
+    mat.onBeforeCompile = (sh) => {
+      sh.uniforms.uRimColor = { value: RIM.color };
+      sh.uniforms.uRimDir = { value: RIM.dir };
+      sh.uniforms.uRimAmt = { value: RIM.strength * (mul == null ? 1 : mul) };
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vRimNW; varying vec3 vRimVV; varying vec3 vRimNV;')
+        .replace('#include <project_vertex>',
+          '#include <project_vertex>\n vRimNW = normalize(mat3(modelMatrix) * objectNormal);\n vRimNV = normalize(normalMatrix * objectNormal);\n vRimVV = normalize(-mvPosition.xyz);');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform vec3 uRimColor; uniform vec3 uRimDir; uniform float uRimAmt;\nvarying vec3 vRimNW; varying vec3 vRimVV; varying vec3 vRimNV;')
+        .replace('#include <dithering_fragment>',
+          '#include <dithering_fragment>\n' +
+          ' float fres = 1.0 - clamp(dot(normalize(vRimNV), normalize(vRimVV)), 0.0, 1.0);\n' +
+          ' float edge = smoothstep(0.58, 0.93, fres);\n' +          // hard-stepped: a stroke, not a glow
+          ' float facing = smoothstep(-0.15, 0.55, dot(normalize(vRimNW), uRimDir));\n' +
+          ' gl_FragColor.rgb += uRimColor * edge * facing * uRimAmt;');
+    };
+    mat.customProgramCacheKey = () => 'rim';
+    rimMaterials.push(mat);
+    return mat;
+  }
+
+  // Lit, shadow-capable surfaces. The illustrated read comes from the palette, the rim,
+  // and the posterize/ink post passes — NOT from flattening the lighting itself.
   function toon(color, opts) {
     const o = Object.assign({ color: color, roughness: 0.95, metalness: 0.0 }, opts || {});
     delete o.gradientMap;
-    return new THREE.MeshStandardMaterial(o);
+    return addRim(new THREE.MeshStandardMaterial(o));
   }
   function toonSoft(color, opts) {
     const o = Object.assign({ color: color, roughness: 1.0, metalness: 0.0 }, opts || {});
     delete o.gradientMap;
-    return new THREE.MeshStandardMaterial(o);
+    return addRim(new THREE.MeshStandardMaterial(o), 0.5);
   }
   // Mark a mesh (and children) as participating in shadows.
   function shad(m, cast, receive) {
@@ -376,9 +411,6 @@
     const geo = rockGeo(radius, opts.squashY == null ? 0.7 : opts.squashY, opts.jitter == null ? 0.28 : opts.jitter);
     const m = new THREE.Mesh(geo, mat);
     m.material.flatShading = true;
-    if (m.material.isMeshStandardMaterial && !m.material.normalMap) {
-      m.material.normalMap = TEX.stoneNormal; m.material.normalScale = new THREE.Vector2(0.28, 0.28);
-    }
     m.material.needsUpdate = true;
     m.castShadow = true; m.receiveShadow = true;
     if (opts.ink !== false) ink(m, opts.ink || 0.004);
@@ -460,7 +492,33 @@
       const h = height * prof * (0.6 + 0.4 * (0.5 + 0.5 * Math.sin(i * 1.7) + 0.28 * Math.sin(i * 0.6 + 1.1)));
       const d = rnd(0.9, depthAmt);
       const lit = clamp(0.5 + 0.5 * Math.sin(i * 0.7 + 1.0) + 0.22 * Math.sin(i * 2.9) + (opts.warm || 0), 0, 1);
-      const geo = new THREE.BoxGeometry(w, h, d, 1, 4, 1);
+      // Sculpt the column into rock: a stepped mesa with a cut-back top and eroded faces,
+      // not a clean rectangle. Displacement is a deterministic function of position so
+      // neighbouring verts agree (the box is non-indexed).
+      const geo = new THREE.BoxGeometry(w, h, d, 3, 10, 3);
+      const seed = i * 3.77 + (opts.warm || 0) * 11.3;
+      {
+        const pp = geo.attributes.position;
+        const v = new THREE.Vector3();
+        const capTilt = (((i * 37) % 17) / 17 - 0.5) * 0.55;   // each summit cut at its own angle
+        for (let k = 0; k < pp.count; k++) {
+          v.set(pp.getX(k), pp.getY(k), pp.getZ(k));
+          const t = (v.y + h / 2) / h;                          // 0 at base, 1 at summit
+          // stepped ledges: the column narrows in discrete shelves as it rises
+          const step = Math.floor(t * 4) / 4;
+          const taper = 1 - step * 0.16 - t * 0.06;
+          v.x *= taper; v.z *= taper;
+          // eroded face relief, quantised into planes
+          let n = fbm3(v.x * 0.18 + seed, v.y * 0.09 + seed, v.z * 0.18 + seed, 3) - 0.5;
+          n = Math.round(n * 4) / 4;
+          v.x += n * w * 0.26; v.z += n * d * 0.30;
+          // angled summit + talus flare at the base
+          if (t > 0.94) v.y += capTilt * w * 0.5 + n * h * 0.05;
+          if (t < 0.10) { v.x *= 1.12; v.z *= 1.12; }
+          pp.setXYZ(k, v.x, v.y, v.z);
+        }
+        pp.needsUpdate = true; geo.computeVertexNormals();
+      }
       const pos = geo.attributes.position, colors = new Float32Array(pos.count * 3), c = new THREE.Color();
       for (let k = 0; k < pos.count; k++) {
         const wy = origin.y + h / 2 + pos.getY(k);   // absolute world height of this vertex
@@ -477,10 +535,9 @@
       const TEXEL = 17.0;  // world units per texture tile (big rock forms, not pebbles)
       for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) * (w / TEXEL), uv.getY(k) * (h / TEXEL));
       uv.needsUpdate = true;
-      const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
-        vertexColors: true, roughness: 0.97, metalness: 0.0, flatShading: true,
-        normalMap: TEX.rockNormal, normalScale: new THREE.Vector2(0.34, 0.34), fog: true,
-      }));
+      const m = new THREE.Mesh(geo, addRim(new THREE.MeshStandardMaterial({
+        vertexColors: true, roughness: 0.97, metalness: 0.0, flatShading: true, fog: true,
+      })));
       m.position.set(cx, h / 2, rnd(-0.5, 0.5) * depthAmt);
       m.frustumCulled = false;
       m.castShadow = true; m.receiveShadow = true;
@@ -530,6 +587,37 @@
     });
     const skyMesh = new THREE.Mesh(g, m); skyMesh.renderOrder = -1;
     if (!location.search.includes('nosky')) scene.add(skyMesh);
+  })();
+
+  /* ----- Moon + stars (night only) — the reference's key light, made visible ---- */
+  (function moon() {
+    if (TOD_NAME !== 'night') return;
+    const c = document.createElement('canvas'); c.width = c.height = 128;
+    const x = c.getContext('2d');
+    x.fillStyle = '#f2eeda'; x.beginPath(); x.arc(64, 64, 46, 0, 7); x.fill();
+    // a few soft maria so it isn't a flat disc
+    x.fillStyle = 'rgba(196,196,180,0.55)';
+    [[52, 52, 13], [78, 70, 9], [60, 84, 7], [84, 46, 6]].forEach(m => {
+      x.beginPath(); x.arc(m[0], m[1], m[2], 0, 7); x.fill();
+    });
+    const tex = new THREE.CanvasTexture(c);
+    const disc = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, fog: false }));
+    disc.position.set(-26, 40, -132); disc.scale.setScalar(17); scene.add(disc);
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: TEX.smoke, color: 0xbcd0f2, transparent: true, opacity: 0.30,
+      blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+    halo.position.copy(disc.position); halo.scale.setScalar(62); scene.add(halo);
+    // stars
+    const sg = new THREE.BufferGeometry();
+    const N = 220, arr = new Float32Array(N * 3);
+    for (let i = 0; i < N; i++) {
+      const a = rnd(-Math.PI, Math.PI), e = rnd(0.18, 0.95), r = 260;
+      arr[i * 3] = Math.sin(a) * Math.cos(e) * r;
+      arr[i * 3 + 1] = Math.sin(e) * r;
+      arr[i * 3 + 2] = -Math.abs(Math.cos(a) * Math.cos(e)) * r;
+    }
+    sg.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+    scene.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xdfe8f7, size: 1.4, sizeAttenuation: false, transparent: true, opacity: 0.85, fog: false })));
   })();
 
   /* ----- Stylized cel clouds (big, simple, ivory-topped / navy-bellied) ---- */
@@ -637,7 +725,7 @@
       p.setY(i, (y || 0) + Math.sin(x * 0.4) * 0.12 + Math.sin(x * 1.7 + z) * 0.06 + Math.max(0, -z) * 0.05);
     }
     p.needsUpdate = true; g.computeVertexNormals();
-    const m = toonSoft(color, { flatShading: true, normalMap: TEX.stoneNormal, normalScale: new THREE.Vector2(0.3, 0.3) });
+    const m = toonSoft(color, { flatShading: true, });
     const mesh = new THREE.Mesh(g, m); mesh.position.z = zCenter;
     mesh.receiveShadow = true; world.add(mesh);
     return mesh;
@@ -687,7 +775,7 @@
     const c = document.createElement('canvas'); c.width = c.height = 64;
     const x = c.getContext('2d');
     const g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
-    g.addColorStop(0, 'rgba(4,10,26,0.85)'); g.addColorStop(0.55, 'rgba(5,12,30,0.45)');
+    g.addColorStop(0, 'rgba(6,14,34,0.5)'); g.addColorStop(0.55, 'rgba(7,16,38,0.24)');
     g.addColorStop(1, 'rgba(5,12,30,0)');
     x.fillStyle = g; x.fillRect(0, 0, 64, 64);
     const tex = new THREE.CanvasTexture(c);
@@ -706,7 +794,7 @@
   (function bankRubble() {
     for (let i = 0; i < 22; i++) {
       const rr = rnd(0.30, 0.95);
-      const m = makeRock(rr, toon(i % 3 === 0 ? 0x7d4527 : 0x8f5330, { flatShading: true }), { squashY: 0.55 });
+      const m = makeRock(rr, toon(new THREE.Color(i % 3 === 0 ? 0x7d4527 : 0x8f5330).multiply(new THREE.Color(TOD.rockTint)).getHex(), { flatShading: true }), { squashY: 0.55 });
       m.position.set(rnd(-30, 30), rnd(0.05, 0.35), rnd(-8.4, -6.2));
       m.rotation.y = rnd(0, 6.28);
       world.add(m);
@@ -714,7 +802,7 @@
     // a few larger blocks sitting proud of the bank edge
     for (let i = 0; i < 7; i++) {
       const rr = rnd(0.9, 1.7);
-      const m = makeRock(rr, toon(0x8a4d2c, { flatShading: true }), { squashY: 0.7 });
+      const m = makeRock(rr, toon(new THREE.Color(0x8a4d2c).multiply(new THREE.Color(TOD.rockTint)).getHex(), { flatShading: true }), { squashY: 0.7 });
       m.position.set(rnd(-28, 28), rnd(0.3, 0.9), rnd(-10.5, -8.5));
       m.rotation.y = rnd(0, 6.28);
       world.add(m);
@@ -1423,6 +1511,7 @@
     const now = performance.now(); let dt = Math.min((now - last) / 1000, 0.05); last = now; clock += dt;
 
     riverUniforms.uTime.value = clock;
+    RIM.dir.copy(sun.position).sub(sun.target.position).normalize();
 
     // steer look
     if (!SHOT && player.lockBlocked && (player.steer.x || player.steer.y)) {
