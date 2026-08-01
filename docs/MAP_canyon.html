@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Canyon River Shootout — Top-Down Maps</title>
+<style>
+  :root { --ink:#0b1120; --navy:#14203a; --verm:#b04a29; --ivory:#ecdfc4; --olive:#555c37; --brass:#a87b3e; --paper:#e9dcc3; --dim:#a99a7e; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#0d1322; color:var(--paper); font-family:"Oswald","Franklin Gothic Medium","Arial Narrow",system-ui,sans-serif; padding:34px 26px 60px; }
+  .wrap { max-width:1040px; margin:0 auto; }
+  h1 { font-family:"Rockwell","Roboto Slab",Georgia,serif; font-weight:800; text-transform:uppercase; letter-spacing:.02em; font-size:clamp(24px,4vw,40px); color:var(--ivory); }
+  .sub { color:var(--brass); text-transform:uppercase; letter-spacing:.35em; font-size:12px; margin:6px 0 30px; }
+  h2 { font-size:17px; text-transform:uppercase; letter-spacing:.18em; color:var(--ivory); margin:38px 0 6px; }
+  h2 .tag { font-size:11px; letter-spacing:.22em; color:var(--brass); margin-left:10px; }
+  p.note { color:var(--dim); font-size:14px; line-height:1.55; max-width:72ch; margin:6px 0 14px; }
+  .mapbox { background:#0a0f1c; border:1px solid #26304a; border-radius:4px; padding:14px; overflow-x:auto; }
+  svg { display:block; }
+  .legend { display:flex; flex-wrap:wrap; gap:14px 26px; margin:14px 2px 0; font-size:12.5px; letter-spacing:.06em; color:var(--dim); }
+  .legend span { display:inline-flex; align-items:center; gap:7px; }
+  .sw { width:14px; height:14px; border-radius:3px; display:inline-block; border:1px solid rgba(233,220,195,.25); }
+  ol.beats { margin:12px 0 0 20px; color:var(--dim); font-size:14px; line-height:1.7; max-width:76ch; }
+  ol.beats b { color:var(--ivory); font-weight:600; }
+  .warn { border-left:3px solid var(--verm); padding:10px 14px; background:rgba(176,74,41,.08); margin:16px 0; font-size:14px; line-height:1.55; color:var(--paper); max-width:78ch; }
+  text { font-family:"Oswald","Arial Narrow",sans-serif; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Canyon River Shootout — Game Space</h1>
+  <div class="sub">Top-down maps · world units · north = far bank</div>
+
+  <h2>A · The space as currently built <span class="tag">measured from canyon.js</span></h2>
+  <p class="note">One screen of battlefield: roughly <b>90 units wide × 30 deep</b> of playable staging, capped left and right by
+  rock buttresses. Jody is <b>fixed</b> behind cover — a standoff arena, not a corridor. Aim is clamped to the ivory sight cone.</p>
+
+  <div class="mapbox">
+  <svg viewBox="0 0 832 512" width="832" height="512" role="img" aria-label="Current canyon battlefield, top-down">
+    <rect x="0" y="0" width="832" height="512" fill="#101828"/>
+    <!-- far canyon wall (north) -->
+    <rect x="0" y="0" width="832" height="96" fill="#3c2030"/>
+    <rect x="0" y="72" width="832" height="24" fill="#552b28"/>
+    <text x="416" y="44" fill="#c98a5a" font-size="15" letter-spacing="4" text-anchor="middle">FAR CANYON WALL — RIM BURNS AT SUNSET</text>
+    <!-- far bank (enemy side) -->
+    <rect x="0" y="192" width="832" height="96" fill="#543d26"/>
+    <!-- shelves -->
+    <ellipse cx="296" cy="232" rx="56" ry="28" fill="#5d3320" stroke="#0b1120" stroke-width="2"/>
+    <ellipse cx="496" cy="216" rx="64" ry="32" fill="#5d3320" stroke="#0b1120" stroke-width="2"/>
+    <ellipse cx="424" cy="192" rx="52" ry="28" fill="#4f3a24" stroke="#0b1120" stroke-width="2"/>
+    <!-- river -->
+    <rect x="0" y="264" width="832" height="120" fill="#14203a"/>
+    <path d="M404 264 C 428 288, 400 312, 420 336 C 436 356, 408 368, 424 384 L 440 384 C 424 368, 452 356, 436 336 C 416 312, 444 288, 420 264 Z" fill="#e08a2e" opacity="0.85"/>
+    <text x="16" y="356" fill="#5a7dc0" font-size="13" letter-spacing="3">RIVER — FLOWS WEST → EAST</text>
+    <!-- river rocks (representative scatter, seeded field spans x −24..24) -->
+    <g fill="#0e1626" stroke="#0b1120" stroke-width="1.5">
+      <ellipse cx="290" cy="300" rx="12" ry="8"/><ellipse cx="352" cy="330" rx="9" ry="6"/>
+      <ellipse cx="470" cy="292" rx="11" ry="7"/><ellipse cx="540" cy="322" rx="8" ry="6"/>
+      <ellipse cx="380" cy="286" rx="8" ry="5"/><ellipse cx="600" cy="300" rx="10" ry="7"/>
+      <ellipse cx="330" cy="292" rx="7" ry="5"/><ellipse cx="510" cy="342" rx="9" ry="6"/><ellipse cx="256" cy="336" rx="8" ry="6"/>
+    </g>
+    <!-- waterline rubble strips -->
+    <g fill="#6f3a22" stroke="#0b1120" stroke-width="1">
+      <ellipse cx="250" cy="280" rx="10" ry="5"/><ellipse cx="316" cy="276" rx="8" ry="4"/><ellipse cx="452" cy="278" rx="9" ry="5"/>
+      <ellipse cx="560" cy="276" rx="11" ry="5"/><ellipse cx="640" cy="282" rx="8" ry="4"/><ellipse cx="700" cy="278" rx="9" ry="5"/>
+    </g>
+    <!-- near bank + player side -->
+    <rect x="0" y="384" width="832" height="26" fill="#1a2340"/>
+    <rect x="0" y="410" width="832" height="102" fill="#101828"/>
+    <!-- flanking buttresses that CAP the space -->
+    <g fill="#2a2136" stroke="#0b1120" stroke-width="2">
+      <rect x="36" y="0" width="52" height="512" rx="18"/>
+      <rect x="744" y="0" width="52" height="512" rx="18"/>
+      <ellipse cx="152" cy="330" rx="42" ry="150"/>
+      <ellipse cx="680" cy="330" rx="42" ry="150"/>
+      <ellipse cx="216" cy="430" rx="46" ry="110"/>
+      <ellipse cx="616" cy="430" rx="46" ry="110"/>
+    </g>
+    <text x="152" y="330" fill="#8f8069" font-size="11" letter-spacing="2" text-anchor="middle" transform="rotate(-90 152 330)">ROCK BUTTRESS (CAPS WEST)</text>
+    <text x="680" y="330" fill="#8f8069" font-size="11" letter-spacing="2" text-anchor="middle" transform="rotate(90 680 330)">ROCK BUTTRESS (CAPS EAST)</text>
+    <!-- sight cone -->
+    <path d="M416 400 L270 232 L562 232 Z" fill="#ecdfc4" opacity="0.07"/>
+    <!-- near cover rocks -->
+    <g fill="#0e1626" stroke="#0b1120" stroke-width="2">
+      <ellipse cx="344" cy="371" rx="13" ry="9"/><ellipse cx="472" cy="368" rx="12" ry="8"/>
+      <ellipse cx="392" cy="363" rx="10" ry="7"/><ellipse cx="512" cy="376" rx="14" ry="9"/>
+      <ellipse cx="397" cy="389" rx="27" ry="13"/>
+    </g>
+    <!-- enemies -->
+    <g>
+      <g fill="#b04a29" stroke="#0b1120" stroke-width="2">
+        <circle cx="308" cy="283" r="8"/><circle cx="384" cy="252" r="8"/><circle cx="408" cy="232" r="8"/>
+        <circle cx="504" cy="270" r="8"/><circle cx="584" cy="212" r="8"/>
+      </g>
+      <g fill="#ecdfc4" font-size="10" text-anchor="middle">
+        <text x="308" y="287">1</text><text x="384" y="256">2</text><text x="408" y="236">3</text>
+        <text x="504" y="274">4</text><text x="584" y="216">5</text>
+      </g>
+    </g>
+    <!-- Crow -->
+    <circle cx="344" cy="156" r="13" fill="#0b1120" stroke="#a87b3e" stroke-width="3"/>
+    <text x="344" y="136" fill="#a87b3e" font-size="12" letter-spacing="2" text-anchor="middle">CROW</text>
+    <!-- Jody -->
+    <circle cx="416" cy="400" r="9" fill="#555c37" stroke="#ecdfc4" stroke-width="2"/>
+    <text x="416" y="424" fill="#ecdfc4" font-size="12" letter-spacing="2" text-anchor="middle">JODY (FIXED)</text>
+    <!-- scale + compass -->
+    <g stroke="#8f8069" stroke-width="2"><line x1="24" y1="492" x2="104" y2="492"/></g>
+    <text x="64" y="482" fill="#8f8069" font-size="11" text-anchor="middle">10 UNITS</text>
+    <text x="808" y="492" fill="#8f8069" font-size="11" text-anchor="end">↑ ACROSS THE RIVER (N)</text>
+  </svg>
+  </div>
+  <div class="legend">
+    <span><span class="sw" style="background:#14203a"></span>river</span>
+    <span><span class="sw" style="background:#e08a2e"></span>reflection streak</span>
+    <span><span class="sw" style="background:#543d26"></span>far bank (enemy)</span>
+    <span><span class="sw" style="background:#5d3320"></span>elevated shelf</span>
+    <span><span class="sw" style="background:#2a2136"></span>canyon rock</span>
+    <span><span class="sw" style="background:#b04a29;border-radius:8px"></span>outlaw seat</span>
+    <span><span class="sw" style="background:#0b1120;border:2px solid #a87b3e;border-radius:8px"></span>Harlan Crow</span>
+    <span><span class="sw" style="background:#555c37;border-radius:8px"></span>Jody</span>
+  </div>
+
+  <div class="warn"><b>The honest finding:</b> the current space is a wide, shallow <i>theater stage</i> — Jody cannot move, and the
+  canyon is only ~30 units deep before the far wall. Your instinct is right: the brief describes a <b>long, slightly curved corridor</b>,
+  and advancing along it is the game. That means restaging the long axis <b>along the river</b>, as below.</div>
+
+  <h2>B · Proposed traversal layout — "The Run" <span class="tag">long &amp; skinny · ~340 × 46 units</span></h2>
+  <p class="note">Jody advances <b>west → east</b> down the canyon, cover to cover along the south bank, crossing the river twice.
+  The river always runs beside you; the walls always tower on both flanks. Enemies hold the north bank in staggered pockets, and
+  Crow's overwatch ledge controls the Narrows — the set-piece of the run.</p>
+
+  <div class="mapbox">
+  <svg viewBox="0 0 1000 320" width="1000" height="320" role="img" aria-label="Proposed traversal corridor, top-down">
+    <rect x="0" y="0" width="1000" height="320" fill="#101828"/>
+    <!-- rims -->
+    <path d="M0 0 H1000 V64 C 900 78, 820 58, 720 70 C 640 80, 560 56, 470 66 C 380 76, 300 58, 210 68 C 130 76, 60 62, 0 70 Z" fill="#3c2030"/>
+    <path d="M0 320 H1000 V262 C 910 250, 830 268, 740 258 C 650 248, 570 270, 480 260 C 390 252, 310 268, 220 258 C 140 250, 70 264, 0 256 Z" fill="#2a2136"/>
+    <path d="M0 64 C 60 62, 130 76, 210 68 C 300 58, 380 76, 470 66 C 560 56, 640 80, 720 70 C 820 58, 900 78, 1000 64 L1000 78 C 900 92, 820 72, 720 84 C 640 94, 560 70, 470 80 C 380 90, 300 72, 210 82 C 130 90, 60 76, 0 84 Z" fill="#552b28"/>
+    <!-- narrows pinch -->
+    <path d="M560 64 C 600 110, 640 120, 668 122 L 668 196 C 640 200, 600 214, 566 260 C 610 210, 650 170, 668 160 Z" fill="#3c2030" opacity="0"/>
+    <ellipse cx="618" cy="105" rx="70" ry="46" fill="#3c2030"/>
+    <ellipse cx="612" cy="228" rx="64" ry="42" fill="#2a2136"/>
+    <text x="616" y="52" fill="#c98a5a" font-size="12" letter-spacing="3" text-anchor="middle">THE NARROWS (~18 WIDE)</text>
+    <!-- river snake -->
+    <path d="M0 150 C 90 130, 150 176, 240 168 C 330 160, 350 120, 440 128 C 520 136, 540 176, 620 172 C 700 168, 720 130, 800 138 C 880 146, 930 170, 1000 158 L 1000 200 C 930 214, 880 190, 800 182 C 720 176, 700 212, 620 214 C 540 216, 520 180, 440 172 C 350 166, 330 204, 240 210 C 150 216, 90 174, 0 192 Z" fill="#14203a"/>
+    <!-- reflection -->
+    <path d="M0 168 C 90 152, 150 194, 240 188 C 330 182, 350 142, 440 149 C 520 156, 540 194, 620 192 C 700 190, 720 152, 800 159 C 880 166, 930 188, 1000 178" fill="none" stroke="#e08a2e" stroke-width="7" opacity="0.75" stroke-linecap="round"/>
+    <!-- fords -->
+    <g fill="#c9b48a" opacity="0.9">
+      <ellipse cx="330" cy="182" rx="26" ry="12"/><ellipse cx="770" cy="172" rx="26" ry="12"/>
+    </g>
+    <text x="330" y="163" fill="#c9b48a" font-size="11" letter-spacing="2" text-anchor="middle">FORD 1</text>
+    <text x="770" y="153" fill="#c9b48a" font-size="11" letter-spacing="2" text-anchor="middle">FORD 2</text>
+    <!-- south path cover -->
+    <g fill="#0e1626" stroke="#0b1120" stroke-width="2">
+      <ellipse cx="60" cy="226" rx="16" ry="9"/><ellipse cx="130" cy="238" rx="13" ry="8"/><ellipse cx="196" cy="228" rx="15" ry="9"/>
+      <ellipse cx="262" cy="236" rx="12" ry="8"/><ellipse cx="420" cy="212" rx="14" ry="9"/><ellipse cx="488" cy="224" rx="12" ry="8"/>
+      <ellipse cx="700" cy="230" rx="14" ry="9"/><ellipse cx="850" cy="226" rx="15" ry="9"/><ellipse cx="920" cy="236" rx="12" ry="8"/>
+    </g>
+    <!-- north pockets -->
+    <g fill="#543d26" stroke="#0b1120" stroke-width="1.5">
+      <ellipse cx="180" cy="120" rx="34" ry="16"/><ellipse cx="430" cy="102" rx="40" ry="17"/>
+      <ellipse cx="840" cy="108" rx="38" ry="16"/>
+    </g>
+    <g fill="#b04a29" stroke="#0b1120" stroke-width="2">
+      <circle cx="168" cy="118" r="7"/><circle cx="196" cy="124" r="7"/>
+      <circle cx="416" cy="100" r="7"/><circle cx="444" cy="106" r="7"/><circle cx="430" cy="92" r="7"/>
+      <circle cx="828" cy="106" r="7"/><circle cx="856" cy="112" r="7"/>
+    </g>
+    <!-- Crow ledge -->
+    <circle cx="632" cy="96" r="12" fill="#0b1120" stroke="#a87b3e" stroke-width="3"/>
+    <text x="632" y="78" fill="#a87b3e" font-size="12" letter-spacing="2" text-anchor="middle">CROW — OVERWATCH</text>
+    <!-- horses alcove -->
+    <ellipse cx="86" cy="258" rx="30" ry="13" fill="#1a2340" stroke="#0b1120" stroke-width="1.5"/>
+    <text x="86" y="284" fill="#8f8069" font-size="10" letter-spacing="2" text-anchor="middle">HORSES</text>
+    <!-- beats -->
+    <g font-size="13" text-anchor="middle">
+      <g fill="#ecdfc4"><circle cx="40" cy="210" r="11" fill="#555c37" stroke="#ecdfc4" stroke-width="2"/><text x="40" y="215" fill="#ecdfc4">1</text></g>
+      <g><circle cx="230" cy="205" r="11" fill="#0d1322" stroke="#ecdfc4" stroke-width="1.5"/><text x="230" y="210" fill="#ecdfc4">2</text></g>
+      <g><circle cx="330" cy="205" r="11" fill="#0d1322" stroke="#ecdfc4" stroke-width="1.5"/><text x="330" y="210" fill="#ecdfc4">3</text></g>
+      <g><circle cx="470" cy="196" r="11" fill="#0d1322" stroke="#ecdfc4" stroke-width="1.5"/><text x="470" y="201" fill="#ecdfc4">4</text></g>
+      <g><circle cx="632" cy="196" r="11" fill="#0d1322" stroke="#ecdfc4" stroke-width="1.5"/><text x="632" y="201" fill="#ecdfc4">5</text></g>
+      <g><circle cx="770" cy="200" r="11" fill="#0d1322" stroke="#ecdfc4" stroke-width="1.5"/><text x="770" y="205" fill="#ecdfc4">6</text></g>
+      <g><circle cx="952" cy="206" r="11" fill="#b04a29" stroke="#ecdfc4" stroke-width="2"/><text x="952" y="211" fill="#ecdfc4">7</text></g>
+    </g>
+    <!-- travel arrow -->
+    <g stroke="#ecdfc4" stroke-width="2" fill="none" opacity="0.8">
+      <path d="M40 300 H940"/><path d="M928 292 L944 300 L928 308"/>
+    </g>
+    <text x="492" y="292" fill="#8f8069" font-size="11" letter-spacing="3" text-anchor="middle">ADVANCE — WEST → EAST, COVER TO COVER</text>
+  </svg>
+  </div>
+
+  <ol class="beats">
+    <li><b>Start — gravel spit.</b> Horses tucked in the alcove behind. First shots ring out as Jody pushes off.</li>
+    <li><b>Cover run.</b> Boulder chain on the south bank; pocket of 2 outlaws across the water teaches the peek/fire rhythm.</li>
+    <li><b>Ford 1.</b> Shallow crossing — exposed, bullet splashes chasing. First real pressure.</li>
+    <li><b>North-bank maze.</b> Fighting through their side of the river: 3 outlaws at close quarters among big rocks.</li>
+    <li><b>The Narrows.</b> Canyon pinches to ~18 units, walls overhang, and Crow's Sharps controls the gap from his ledge — move only between thunderclaps. The set-piece.</li>
+    <li><b>Ford 2.</b> Back across to the south spit under fire from the last pocket.</li>
+    <li><b>Final bar — the goal.</b> Last stand at the east bend; clearing it advances the story (and the canyon opens toward the next scene).</li>
+  </ol>
+
+  <p class="note" style="margin-top:22px"><b>What implementing "The Run" needs:</b> restage the built geometry along the river's axis
+  (banks, wall spines, cover chains from the existing organic builders) · give Jody actual movement along the corridor (the FPS rig is
+  currently locked in place — WASD today only nudges aim) · zone triggers that wake each enemy pocket · Crow's overwatch beat in the
+  Narrows. All the visual systems (cliffs, water, characters, lighting, grade) carry over unchanged.</p>
+</div>
+</body>
+</html>
