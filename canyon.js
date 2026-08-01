@@ -488,64 +488,56 @@
   }
   // A canyon wall built from faceted vertical COLUMNS (columnar sandstone) — each a flat
   // color mass with hard edges to its neighbours, jagged tops biting into the sky strip.
+  // A canyon wall built from ORGANIC MESA MASSES — vertically stretched, noise-displaced
+  // domes with rounded shoulders — replacing the stepped boxes that read as voxel
+  // terracing. Displacement is a deterministic function of vertex DIRECTION, and
+  // SphereGeometry is indexed, so forms deform without tearing.
   function buildCliff(width, height, cols, origin, dir, depthAmt, opts) {
     opts = opts || {};
     const group = new THREE.Group();
     const colW = width / cols;
+    const v = new THREE.Vector3(), dn = new THREE.Vector3();
     for (let i = 0; i < cols; i++) {
       const cx = -width / 2 + (i + 0.5) * colW;
-      const w = colW * rnd(1.10, 1.34);   // always overlap the neighbour — a gap shows sky as a bright sliver
       const prof = opts.profile ? opts.profile(i / (cols - 1)) : 1;
       const h = height * prof * (0.6 + 0.4 * (0.5 + 0.5 * Math.sin(i * 1.7) + 0.28 * Math.sin(i * 0.6 + 1.1)));
-      const d = rnd(0.9, depthAmt);
+      const rx = colW * rnd(0.78, 0.98);            // diameters overlap the neighbours
+      const rz = rnd(1.6, Math.max(2.2, depthAmt * 0.55));
       const lit = clamp(0.5 + 0.5 * Math.sin(i * 0.7 + 1.0) + 0.22 * Math.sin(i * 2.9) + (opts.warm || 0), 0, 1);
-      // Sculpt the column into rock: a stepped mesa with a cut-back top and eroded faces,
-      // not a clean rectangle. Displacement is a deterministic function of position so
-      // neighbouring verts agree (the box is non-indexed).
-      const geo = new THREE.BoxGeometry(w, h, d, 3, 10, 3);
       const seed = i * 3.77 + (opts.warm || 0) * 11.3;
-      {
-        const pp = geo.attributes.position;
-        const v = new THREE.Vector3();
-        const capTilt = (((i * 37) % 17) / 17 - 0.5) * 0.55;   // each summit cut at its own angle
-        for (let k = 0; k < pp.count; k++) {
-          v.set(pp.getX(k), pp.getY(k), pp.getZ(k));
-          const t = (v.y + h / 2) / h;                          // 0 at base, 1 at summit
-          // stepped ledges: the column narrows in discrete shelves as it rises
-          const step = Math.floor(t * 4) / 4;
-          const taper = 1 - step * 0.16 - t * 0.06;
-          v.x *= taper; v.z *= taper;
-          // eroded face relief, quantised into planes
-          let n = fbm3(v.x * 0.18 + seed, v.y * 0.09 + seed, v.z * 0.18 + seed, 3) - 0.5;
-          n = Math.round(n * 4) / 4;
-          v.x += n * w * 0.26; v.z += n * d * 0.30;
-          // angled summit + talus flare at the base
-          if (t > 0.94) v.y += capTilt * w * 0.5 + n * h * 0.05;
-          if (t < 0.10) { v.x *= 1.12; v.z *= 1.12; }
-          pp.setXYZ(k, v.x, v.y, v.z);
-        }
-        pp.needsUpdate = true; geo.computeVertexNormals();
+      const geo = new THREE.SphereGeometry(1, 18, 16);
+      const pp = geo.attributes.position;
+      for (let k = 0; k < pp.count; k++) {
+        v.set(pp.getX(k), pp.getY(k), pp.getZ(k));
+        dn.copy(v).normalize();
+        // big soft lobes + a hint of bedding; mostly smooth, faintly quantised so broad
+        // painterly facets survive without reading as stair-steps
+        let n = fbm3(dn.x * 1.7 + seed, dn.y * 1.2 + seed, dn.z * 1.7 + seed, 3) - 0.5;
+        n = 0.65 * n + 0.35 * (Math.round(n * 3) / 3);
+        const r = 1 + n * 0.34;
+        v.multiplyScalar(r);
+        // rounded-shoulder profile: full-bodied low, easing in toward the summit
+        const y01 = clamp(v.y * 0.5 + 0.5, 0, 1);
+        const taper = 1.04 - smoothstep(0.45, 1.0, y01) * 0.30;
+        v.x *= taper; v.z *= taper;
+        pp.setXYZ(k, v.x, v.y, v.z);
       }
-      const pos = geo.attributes.position, colors = new Float32Array(pos.count * 3), c = new THREE.Color();
-      for (let k = 0; k < pos.count; k++) {
-        const wy = origin.y + h / 2 + pos.getY(k);   // absolute world height of this vertex
+      pp.needsUpdate = true; geo.computeVertexNormals();
+      // colour by absolute world height (albedo only; light does the sculpting)
+      const scaleY = h * 0.55, baseY = h * 0.45;
+      const colors = new Float32Array(pp.count * 3), c = new THREE.Color();
+      for (let k = 0; k < pp.count; k++) {
+        const wy = origin.y + baseY + pp.getY(k) * scaleY;
         c.copy(cliffColor(wy, lit, origin.y + h));
         colors[k * 3] = c.r; colors[k * 3 + 1] = c.g; colors[k * 3 + 2] = c.b;
       }
       geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-      // LIT now (was unlit): the baked vertex colors act as albedo and real light +
-      // shadow does the sculpting, which is what gives the rock volume.
-      // Scale UVs to WORLD size so texel density is uniform. Box faces are 0..1 regardless
-      // of their real dimensions, which stretched the rock texture into vertical scratches
-      // on tall columns.
-      const uv = geo.attributes.uv;
-      const TEXEL = 17.0;  // world units per texture tile (big rock forms, not pebbles)
-      for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) * (w / TEXEL), uv.getY(k) * (h / TEXEL));
-      uv.needsUpdate = true;
       const m = new THREE.Mesh(geo, addRim(new THREE.MeshStandardMaterial({
-        vertexColors: true, roughness: 0.97, metalness: 0.0, flatShading: true, fog: true,
+        vertexColors: true, roughness: 0.97, metalness: 0.0, fog: true,
       })));
-      m.position.set(cx, h / 2, rnd(-0.5, 0.5) * depthAmt);
+      m.scale.set(rx, scaleY, rz);
+      m.position.set(cx, baseY, rnd(-0.5, 0.5) * depthAmt);
+      m.rotation.y = rnd(-0.4, 0.4);
       m.frustumCulled = false;
       m.castShadow = true; m.receiveShadow = true;
       group.add(m);
