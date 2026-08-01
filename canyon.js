@@ -75,7 +75,21 @@
       bloom: 0.5,
     },
   };
-  const TOD_NAME = location.search.indexOf('night') >= 0 ? 'night' : 'dusk';
+  TOD_PRESETS.day = {
+    // From the daylight wall sheets: brilliant blue sky, orange faces, mauve shadows.
+    key: 0xffd39a, keyIntensity: 1.5, keyPos: [-30, 120, 55],
+    skyFill: 0x7fa8d8, ground: 0x2a2438, hemi: 0.9,
+    ambient: 0x3a4a72, ambientI: 0.42,
+    fill: 0x88a8d8, fillI: 0.3, bounce: 0x54628c, bounceI: 0.25,
+    fog: 0x6a7ba0, fogDensity: 0.006,
+    sky: [0x7fb0dd, 0x4489cc, 0x1e63b0],
+    river: 0xbfe0f2, rockTint: 0xffffff, rim: 0xffd9a0, rimStrength: 0.7,
+    grade: { shadow: 0x3b3560, light: 0xffd9a8, tint: 0.3, sat: 1.42 },
+    mist: [0x8a7a88, 0x7a6f88, 0x6a7a9c, 0x5a6a8c], mistI: 0.5,
+    bloom: 0.25,
+  };
+  const TOD_NAME = location.search.indexOf('night') >= 0 ? 'night'
+    : location.search.indexOf('day') >= 0 ? 'day' : 'dusk';
   const TOD = TOD_PRESETS[TOD_NAME];
 
   /* =========================================================================
@@ -468,7 +482,7 @@
   const ALB_DEEP = new THREE.Color(0x6f3a22);   // damp lower sandstone
   const ALB_MID = new THREE.Color(0x9c5330);    // burnt vermillion body
   const ALB_HI = new THREE.Color(0xbe7442);     // sun-bleached upper rock
-  const ALB_COOL = new THREE.Color(0x3b3350);   // shaded rock body, pulled toward navy
+  const ALB_COOL = new THREE.Color(0x4b3a5e);   // shaded rock body — the sheets' mauve-purple
   function cliffColor(worldY, lit, topY) {
     const h = clamp(worldY / 60, 0, 1);
     const c = ALB_DEEP.clone().lerp(ALB_MID, smoothstep(0.02, 0.42, h));
@@ -506,30 +520,43 @@
       const rz = rnd(1.6, Math.max(2.2, depthAmt * 0.55));
       const lit = clamp(0.5 + 0.5 * Math.sin(i * 0.7 + 1.0) + 0.22 * Math.sin(i * 2.9) + (opts.warm || 0), 0, 1);
       const seed = i * 3.77 + (opts.warm || 0) * 11.3;
-      const geo = new THREE.SphereGeometry(1, 18, 16);
+      const geo = new THREE.SphereGeometry(1, 22, 16);
       const pp = geo.attributes.position;
       for (let k = 0; k < pp.count; k++) {
         v.set(pp.getX(k), pp.getY(k), pp.getZ(k));
         dn.copy(v).normalize();
-        // big soft lobes + a hint of bedding; mostly smooth, faintly quantised so broad
-        // painterly facets survive without reading as stair-steps
-        let n = fbm3(dn.x * 1.7 + seed, dn.y * 1.2 + seed, dn.z * 1.7 + seed, 3) - 0.5;
-        n = 0.65 * n + 0.35 * (Math.round(n * 3) / 3);
-        const r = 1 + n * 0.34;
-        v.multiplyScalar(r);
-        // rounded-shoulder profile: full-bodied low, easing in toward the summit
+        // Reference-sheet butte: VERTICAL sides with fluted columns, a hard flat top
+        // with a stepped caprock shoulder, and a talus flare at the base.
+        const ang = Math.atan2(dn.z, dn.x);
+        // vertical flutes: radius varies by angle only, so ridges run top-to-bottom
+        let flute = vnoise3(Math.cos(ang) * 2.4 + seed, 0, Math.sin(ang) * 2.4 + seed) - 0.5;
+        flute = Math.round(flute * 5) / 5;
+        // broad lobes for silhouette variety, quantised into planes
+        let n = fbm3(dn.x * 1.3 + seed, dn.y * 0.9 + seed, dn.z * 1.3 + seed, 3) - 0.5;
+        n = Math.round(n * 3) / 3;
+        const rad = 1 + n * 0.20 + flute * 0.17;
+        v.x *= rad; v.z *= rad;                       // radial only — sides stay vertical
         const y01 = clamp(v.y * 0.5 + 0.5, 0, 1);
-        const taper = 1.04 - smoothstep(0.45, 1.0, y01) * 0.30;
-        v.x *= taper; v.z *= taper;
+        if (v.y > 0.70 + flute * 0.08) v.y = 0.70 + flute * 0.08;   // flat top, stepped by flute
+        const shoulder = y01 > 0.80 ? 0.90 : 1.0;                   // caprock step-in
+        v.x *= shoulder; v.z *= shoulder;
+        if (y01 < 0.14) { v.x *= 1.12; v.z *= 1.12; }               // talus flare
         pp.setXYZ(k, v.x, v.y, v.z);
       }
       pp.needsUpdate = true; geo.computeVertexNormals();
       // colour by absolute world height (albedo only; light does the sculpting)
-      const scaleY = h * 0.55, baseY = h * 0.45;
+      const scaleY = h * 0.66, baseY = h * 0.42;
       const colors = new Float32Array(pp.count * 3), c = new THREE.Color();
       for (let k = 0; k < pp.count; k++) {
         const wy = origin.y + baseY + pp.getY(k) * scaleY;
         c.copy(cliffColor(wy, lit, origin.y + h));
+        // sponged darker blotches on the faces (the sheets' mottled paint texture)
+        const wx = cx + pp.getX(k) * rx, wz = pp.getZ(k) * rz;
+        const blotch = fbm3(wx * 0.24 + seed, wy * 0.24, wz * 0.24, 3);
+        if (blotch > 0.60) c.multiplyScalar(0.85);
+        else if (blotch < 0.38) c.multiplyScalar(1.06);
+        // horizontal strata banding low on the wall
+        if (wy < origin.y + h * 0.32) c.multiplyScalar(0.90 + (Math.sin(wy * 2.4 + seed) * 0.5 + 0.5) * 0.12);
         colors[k * 3] = c.r; colors[k * 3 + 1] = c.g; colors[k * 3 + 2] = c.b;
       }
       geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
@@ -550,6 +577,10 @@
   const cliffs = new THREE.Group();
   // Far wall closing the canyon behind the enemies — capped so a warm sky strip reads above.
   cliffs.add(buildCliff(360, 30, 64, new THREE.Vector3(0, FLOOR, -32), 0, 5));
+  // first terrace band, low, just behind the enemy pockets
+  cliffs.add(buildCliff(360, 11, 50, new THREE.Vector3(0, FLOOR, -19), 0, 4, { warm: 0.2 }));
+  // low band behind the player before the south spine
+  cliffs.add(buildCliff(360, 9, 46, new THREE.Vector3(0, FLOOR, 25), Math.PI, 4, { warm: -0.2 }));
   // Side walls: brought in so they rise on the left/right BEHIND the far bank, leaving a
   // central sky gap (the canyon opening) — the gang-on-the-bank composition.
   cliffs.add(buildCliff(64, 96, 8, new THREE.Vector3(-172, FLOOR, -2), Math.PI / 2 + 0.05, 12, { warm: 0.5 }));   // WEST end cap (the start at your back)
@@ -793,6 +824,24 @@
     }
   }
   scatterRocks();
+
+  (function scrub() {
+    const cols = [0x4a5230, 0x5a6340, 0x47502e, 0x5e5a30];
+    const tint = new THREE.Color(TOD.rockTint);
+    function bush(x, z, sc, y) {
+      const n = rint(2, 4);
+      for (let i = 0; i < n; i++) {
+        const c = new THREE.Color(cols[rint(0, 3)]).multiply(tint).getHex();
+        const b = blob(toon(c, { flatShading: false }), sc * rnd(0.5, 0.85), sc * rnd(0.3, 0.5), sc * rnd(0.5, 0.85), 8);
+        b.position.set(x + rnd(-sc, sc) * 0.8, (y || 0) + sc * 0.22 + rnd(0, 0.08), z + rnd(-sc, sc) * 0.6);
+        b.castShadow = true;
+        world.add(b);
+      }
+    }
+    for (let i = 0; i < 48; i++) bush(rnd(-155, 155), rnd(6.6, 20), rnd(0.5, 1.1));    // south bank
+    for (let i = 0; i < 42; i++) bush(rnd(-155, 155), rnd(-17, -9.5), rnd(0.5, 1.2));  // far-bank benches
+    for (let i = 0; i < 10; i++) bush(rnd(-150, 150), rnd(6.5, 7.3), rnd(0.35, 0.6));  // waterline tufts
+  })();
 
   // Contact shadows. The river is a custom ShaderMaterial so it cannot receive the
   // shadow map; without these the boulders look pasted onto the surface. A soft dark
