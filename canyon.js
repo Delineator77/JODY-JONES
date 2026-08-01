@@ -959,21 +959,45 @@
     const duster = toon(0x14161f, { flatShading: true });
     const hat = toon(0x090a10, { flatShading: true });
     function b(w, h, d, mat, x, y, z) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); g.add(m); return m; }
-    const body = b(1.0, 1.7, 0.5, duster, 0, 1.1, 0); ink(body, 0.004);
-    b(1.3, 1.1, 0.5, duster, 0, 0.7, 0);                  // coat flare
-    const head = b(0.34, 0.36, 0.32, toon(0x6e4a34, { flatShading: true }), 0, 2.1, 0); ink(head, 0.004);
-    b(0.9, 0.08, 0.9, hat, 0, 2.28, 0); ink(b(0.5, 0.28, 0.5, hat, 0, 2.42, 0), 0.004);
-    // long Sharps rifle held at the side
+    // HARLAN CROW — the environmental threat. Read as a monolith: heavy shoulders, a
+    // duster falling to the boots, a wide flat brim, and that long Sharps. He barely moves.
+    const boots = toon(0x0b0c12, { flatShading: true });
+    // long duster: near-floor-length, flaring slightly
+    const coat = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.92, 1.85, 9), duster);
+    coat.position.set(0, 0.92, 0); g.add(coat);
+    const coatSplit = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.95, 0.94), boots);
+    coatSplit.position.set(0, 0.55, 0.02); g.add(coatSplit);        // centre seam of the coat
+    b(0.30, 0.42, 0.34, boots, -0.26, 0.20, 0.03);                  // boots below the hem
+    b(0.30, 0.42, 0.34, boots, 0.26, 0.20, 0.03);
+    // heavy torso + shoulder yoke (the mass that makes him read as huge)
+    const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.60, 0.55, 0.86, 9), duster);
+    torso.position.set(0, 2.16, 0); g.add(torso);
+    b(1.42, 0.26, 0.56, duster, 0, 2.50, 0);                        // shoulders
+    b(1.02, 0.20, 0.50, duster, 0, 2.62, 0);                        // coat collar up
+    // arms hanging heavy
+    b(0.26, 0.92, 0.28, duster, -0.66, 2.02, 0.02);
+    b(0.26, 0.92, 0.28, duster, 0.66, 2.02, 0.02);
+    const head = b(0.38, 0.40, 0.36, toon(0x6e4a34, { flatShading: true }), 0, 2.86, 0);
+    b(0.42, 0.16, 0.40, toon(0x2a2018, { flatShading: true }), 0, 2.70, 0.02);   // beard/jaw shadow
+    // hat: wide flat brim + tall crown with a band — his signature shape
+    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.82, 0.86, 0.07, 12), hat);
+    brim.position.set(0, 3.06, 0.01); g.add(brim);
+    const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.36, 0.40, 10), hat);
+    crown.position.set(0, 3.28, 0); g.add(crown);
+    b(0.76, 0.07, 0.76, toon(0x24262f, { flatShading: true }), 0, 3.11, 0);      // hat band
+    // long Sharps rifle, butt on the ground, barrel angled across him
     const sharps = new THREE.Group();
-    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1.9, 6), toon(0x22252e, { flatShading: true }));
-    bar.rotation.z = 0.5; sharps.add(bar);
-    const st = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.12, 0.09), toon(0x3a2413, { flatShading: true }));
-    st.position.set(-0.7, -0.42, 0); st.rotation.z = 0.5; sharps.add(st);
-    sharps.position.set(0.7, 1.1, 0.2); g.add(sharps);
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 2.5, 8), toon(0x22252e, { flatShading: true }));
+    bar.rotation.z = 0.30; sharps.add(bar);
+    const st = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.17, 0.12), toon(0x3a2413, { flatShading: true }));
+    st.position.set(-0.42, -1.28, 0); st.rotation.z = 0.30; sharps.add(st);
+    const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.85, 8), toon(0x1a1c24, { flatShading: true }));
+    scope.rotation.z = 0.30; scope.position.set(0.10, 0.30, 0.13); sharps.add(scope);
+    sharps.position.set(0.80, 1.55, 0.24); g.add(sharps);
     const glow = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.6), new THREE.MeshBasicMaterial({ map: TEX.glow, color: 0xffca7a, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
-    glow.position.set(0.95, 1.35, 0.4); g.add(glow);
-    const pt = new THREE.PointLight(0xffc070, 0, 14); pt.position.set(1.0, 1.4, 0.6); g.add(pt);
-    g.position.set(-3, 2.3, -20.5); g.scale.setScalar(1.35);
+    glow.position.set(1.25, 2.75, 0.45); g.add(glow);
+    const pt = new THREE.PointLight(0xffc070, 0, 14); pt.position.set(1.3, 2.8, 0.7); g.add(pt);
+    g.position.set(-7.5, 1.05, -23.5); g.scale.setScalar(1.12);
     shad(g);
     scene.add(g);
 
