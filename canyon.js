@@ -57,7 +57,7 @@
       sky: [0xe89a52, 0x8a5a55, 0x141f38],
       river: 0xf0993e, rockTint: 0xffffff, rim: 0xff9c4a, rimStrength: 1.15,
       grade: { shadow: 0x1b2a4e, light: 0xffd7a2, tint: 0.34, sat: 1.24 },
-      mist: [0xe0925a, 0xc07c58, 0x74849f, 0x4a5c85], mistI: 1.0,
+      mist: [0x7a5a4c, 0x5f4a48, 0x47536e, 0x333f5c], mistI: 1.0,
       bloom: 0.35,
     },
     night: {
@@ -71,7 +71,7 @@
       sky: [0x40567f, 0x22304f, 0x080d1c],
       river: 0xcfe0f5, rockTint: 0x7d93d6, rim: 0x9fc4f5, rimStrength: 0.95,
       grade: { shadow: 0x101d3c, light: 0xcadcf6, tint: 0.42, sat: 1.10 },
-      mist: [0x50699c, 0x44578a, 0x36466e, 0x27334f], mistI: 0.85,
+      mist: [0x3d4d74, 0x344263, 0x293450, 0x1e2840], mistI: 0.85,
       bloom: 0.5,
     },
   };
@@ -551,8 +551,8 @@
   cliffs.add(buildCliff(210, 30, 40, new THREE.Vector3(0, FLOOR, -34), 0, 5));
   // Side walls: brought in so they rise on the left/right BEHIND the far bank, leaving a
   // central sky gap (the canyon opening) — the gang-on-the-bank composition.
-  cliffs.add(buildCliff(150, 58, 17, new THREE.Vector3(-44, FLOOR, -4), Math.PI / 2 + 0.05, 12, { warm: 0.5 }));   // left wall catches the sun
-  cliffs.add(buildCliff(150, 58, 17, new THREE.Vector3(44, FLOOR, -4), -Math.PI / 2 - 0.05, 12, { warm: -0.15 })); // right wall shadowed
+  cliffs.add(buildCliff(150, 102, 17, new THREE.Vector3(-44, FLOOR, -4), Math.PI / 2 + 0.05, 12, { warm: 0.5 }));  // left wall catches the sun
+  cliffs.add(buildCliff(150, 102, 17, new THREE.Vector3(44, FLOOR, -4), -Math.PI / 2 - 0.05, 12, { warm: -0.15 }));// right wall shadowed
 
   // NEAR WALLS — the enclosure. These start beside/behind the player and run tall enough
   // to exit the top of frame, cropping the left and right edges so the camera is inside a
@@ -684,13 +684,13 @@
         '  float f = fbm(vP*vec2(2.3,4.0) - flow*2.2);\n' +
         '  float caps = smoothstep(0.60,0.82,f);\n' +
         '  // SIGNATURE: a defined reflection streak running toward the viewer\n' +
-        '  float streakX = sin(vP.y*0.30 + 0.6)*2.4 + sin(vP.y*0.85)*0.9;\n' +
-        '  float streak = pow(smoothstep(3.4, 0.0, abs(vP.x - streakX)), 1.6);\n' +
+        '  float streakX = sin(vP.y*0.30 + 0.6)*1.5 + sin(vP.y*0.85)*0.5;\n' +
+        '  float streak = pow(smoothstep(2.3, 0.0, abs(vP.x - streakX)), 1.5);\n' +
         '  // amber reflection — deliberately capped below clipping so it never blows to white\n' +
         '  vec3 sunCol = uSun * 0.82;\n' +
         '  col = mix(col, sunCol, streak*0.92);\n' +
         '  // foam caps — a touch brighter only inside the reflection\n' +
-        '  col = mix(col, mix(vec3(0.42,0.47,0.55), sunCol, 0.55), caps*(0.18 + 0.42*streak));\n' +
+        '  col = mix(col, mix(vec3(0.42,0.47,0.55), sunCol, 0.55), caps*(0.05 + 0.5*streak));\n' +
         '  // shimmering specular along the streak\n' +
         '  float glint = pow(max(0.0, sin(vP.x*2.2 + vP.y*1.5 - uTime*5.0)*0.5+0.5), 6.0);\n' +
         '  col += sunCol * glint * streak * 0.22;\n' +
@@ -982,19 +982,19 @@
     const stubble = blob(toon(0x6f4630, { flatShading: false }), 0.088, 0.052, 0.098, 14);
     stubble.position.set(0, 1.648, -0.030); g.add(stubble);
     // hair: a rounded mass under the hat plus a fall over the collar
-    const hairTop = blob(hairM, 0.132, 0.098, 0.140, 16); hairTop.position.set(0, 1.808, 0.008); g.add(hairTop);
+    const hairTop = blob(hairM, 0.126, 0.075, 0.132, 16); hairTop.position.set(0, 1.792, 0.010); g.add(hairTop);
     const hairBack = blob(hairM, 0.145, 0.160, 0.098, 16); hairBack.position.set(0, 1.660, 0.088); g.add(hairBack);
     const hairEnds = blob(hairM, 0.152, 0.075, 0.088, 16); hairEnds.position.set(0, 1.528, 0.072); g.add(hairEnds);
     g.add(limb(hairM, [[0.128, 1.775, 0.03], [0.140, 1.660, 0.05], [0.132, 1.560, 0.06]], [0.052, 0.058, 0.040], 8));
     g.add(limb(hairM, [[-0.128, 1.775, 0.03], [-0.140, 1.660, 0.05], [-0.132, 1.560, 0.06]], [0.052, 0.058, 0.040], 8));
 
     // --- HAT: lathe brim with a curl, pinched crown, tilted ---
-    const brim = lathe([[0.03, 0.045], [0.16, 0.036], [0.26, 0.014], [0.325, 0.004], [0.342, 0.052]], 22, hatM);
-    brim.position.set(0, 1.905, -0.012); brim.rotation.z = 0.10; brim.scale.set(1, 1, 1.10); g.add(brim);
-    const crown = lathe([[0.02, 0], [0.150, 0.014], [0.170, 0.115], [0.128, 0.235], [0.02, 0.255]], 20, hatM);
-    crown.position.set(0, 1.915, 0); crown.rotation.z = 0.10; g.add(crown);
-    const band = new THREE.Mesh(new THREE.TorusGeometry(0.158, 0.020, 8, 22), toon(0x3a2416, { flatShading: false }));
-    band.rotation.x = Math.PI / 2; band.position.set(0, 1.955, 0); band.rotation.z = 0.10; g.add(band);
+    const brim = lathe([[0.03, 0.040], [0.14, 0.030], [0.21, 0.012], [0.255, 0.003], [0.268, 0.042]], 22, hatM);
+    brim.position.set(0, 1.872, -0.012); brim.rotation.z = 0.10; brim.scale.set(1, 1, 1.10); g.add(brim);
+    const crown = lathe([[0.02, 0], [0.132, 0.014], [0.150, 0.105], [0.112, 0.215], [0.02, 0.235]], 20, hatM);
+    crown.position.set(0, 1.880, 0); crown.rotation.z = 0.10; g.add(crown);
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.140, 0.018, 8, 22), toon(0x3a2416, { flatShading: false }));
+    band.rotation.x = Math.PI / 2; band.position.set(0, 1.920, 0); band.rotation.z = 0.10; g.add(band);
 
     // CHARACTER KEY: he stands inside the canyon's shadow, so skylight alone flattens
     // hair, skin, poncho and gun into one value. A dedicated short-throw warm key (the
@@ -1005,7 +1005,7 @@
     charFill.position.set(1.7, 1.6, 1.5); g.add(charFill);
 
     g.position.set(0.6, -0.55, 6.4);
-    g.rotation.y = 0.10;                // authored facing -z, i.e. toward the far bank
+    g.rotation.y = 0.34;                // turned so the extended gun arm clears his outline
     shad(g);
     g.visible = false;
     scene.add(g);
@@ -1033,8 +1033,8 @@
     // camera-mounted kicker supplies the warm top rim.
     const steelM = new THREE.MeshStandardMaterial({ color: 0x1c2531, roughness: 0.78, metalness: 0.35, fog: false });
     const steelDarkM = new THREE.MeshStandardMaterial({ color: 0x10161f, roughness: 0.82, metalness: 0.3, fog: false });
-    const woodM = new THREE.MeshStandardMaterial({ color: 0x4a2a12, roughness: 1.0, metalness: 0, fog: false });
-    const gloveM = new THREE.MeshStandardMaterial({ color: 0x3a2a14, roughness: 1.0, metalness: 0, fog: false });
+    const woodM = new THREE.MeshStandardMaterial({ color: 0x6b3a16, roughness: 1.0, metalness: 0, fog: false });
+    const gloveM = new THREE.MeshStandardMaterial({ color: 0x6a4a26, roughness: 1.0, metalness: 0, fog: false });
     const cuffM = new THREE.MeshStandardMaterial({ color: 0x141c2e, roughness: 1.0, metalness: 0, fog: false });
     const ponchoM = new THREE.MeshStandardMaterial({ color: 0x39411f, roughness: 1.0, metalness: 0, fog: false });
     const steelInk = 0.006;
@@ -1052,7 +1052,7 @@
       add(new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.19, 6), steelDarkM), Math.cos(a) * 0.062, 0.012 + Math.sin(a) * 0.062, -0.02, Math.PI / 2);
     }
     // frame: rounded mass + topstrap over the cylinder
-    const frame = add(blob(steelM, 0.048, 0.070, 0.16, 12), 0, 0.005, 0.06); ink(frame, steelInk);
+    const frame = add(blob(steelM, 0.046, 0.052, 0.155, 12), 0, 0.0, 0.06); ink(frame, steelInk);
     add(new THREE.Mesh(new THREE.CylinderGeometry(0.020, 0.020, 0.30, 8), steelM), 0, 0.085, 0.02, Math.PI / 2);
     add(blob(steelM, 0.016, 0.030, 0.028, 8), 0, 0.108, 0.185, -0.5);       // hammer spur
     add(blob(steelM, 0.010, 0.018, 0.012, 6), 0, 0.082, -0.71);             // front sight
@@ -1062,7 +1062,7 @@
     const grip = add(limb(woodM, [[0, -0.03, 0.16], [0, -0.115, 0.215], [0, -0.20, 0.255], [0, -0.275, 0.262]],
       [0.040, 0.045, 0.046, 0.034], 10), 0, 0, 0); ink(grip, steelInk);
     // --- Jody's gloved hand: palm, wrapped fingers, thumb along the frame ---
-    const palm = add(blob(gloveM, 0.062, 0.088, 0.078, 12), 0.014, -0.15, 0.235, 0, 0, 0.15); ink(palm, 0.005);
+    const palm = add(blob(gloveM, 0.052, 0.070, 0.066, 12), 0.014, -0.145, 0.235, 0, 0, 0.15); ink(palm, 0.005);
     add(limb(gloveM, [[0.035, -0.052, 0.15], [-0.012, -0.042, 0.128], [-0.046, -0.06, 0.142]], [0.019, 0.018, 0.014], 7), 0, 0, 0);
     add(limb(gloveM, [[0.048, -0.098, 0.205], [-0.018, -0.082, 0.165], [-0.046, -0.10, 0.192]], [0.021, 0.020, 0.015], 7), 0, 0, 0);
     add(limb(gloveM, [[0.048, -0.134, 0.228], [-0.014, -0.122, 0.192], [-0.042, -0.14, 0.216]], [0.020, 0.019, 0.014], 7), 0, 0, 0);
@@ -1070,9 +1070,9 @@
     // --- forearm sweeping in from the bottom-right, sleeve + poncho cuff ---
     // (kept well in front of the near plane — a box here once sat behind the lens and
     // rendered as a clipped white block)
-    add(blob(gloveM, 0.060, 0.055, 0.062, 10), 0.010, -0.20, 0.20);          // wrist
+    add(blob(gloveM, 0.052, 0.046, 0.054, 10), 0.010, -0.205, 0.20);         // wrist
     const fore = add(limb(cuffM, [[0.02, -0.235, 0.205], [0.05, -0.315, 0.33], [0.095, -0.42, 0.50]],
-      [0.060, 0.076, 0.094], 12), 0, 0, 0); ink(fore, 0.005);
+      [0.056, 0.068, 0.082], 12), 0, 0, 0); ink(fore, 0.005);
     const cuffB = add(new THREE.Mesh(new THREE.TorusGeometry(0.084, 0.022, 8, 16), ponchoM), 0.052, -0.318, 0.335);
     cuffB.rotation.x = 1.08; ink(cuffB, 0.005);
 
@@ -1082,7 +1082,7 @@
     const flashPt = new THREE.PointLight(0xffa040, 0, 4.0); flashPt.position.set(0, 0.12, -0.6); grp.add(flashPt);
 
     grp.position.set(0.235, -0.175, -0.52);
-    grp.rotation.y = -0.17; grp.rotation.z = 0.05; grp.rotation.x = 0.05;
+    grp.rotation.y = -0.20; grp.rotation.z = 0.06; grp.rotation.x = 0.05;
     grp.scale.setScalar(0.74);
     const kicker = new THREE.PointLight(0xffc98a, 0.55, 3.0, 1.2);
     kicker.position.set(-0.55, 0.75, -0.35); camera.add(kicker);
@@ -1254,7 +1254,7 @@
     // muzzle flash at the barrel tip
     const flash = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.95), new THREE.MeshBasicMaterial({ map: TEX.flash, color: 0xffd9a0, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
     flash.position.set(-0.76, 1.20, 0.34); g.add(flash);
-    const fpt = new THREE.PointLight(0xffa848, 0, 9.0); fpt.position.set(-0.92, 1.22, 0.46); g.add(fpt);
+    const fpt = new THREE.PointLight(0xffa848, 0, 13.0); fpt.position.set(-0.92, 1.22, 0.46); g.add(fpt);
     g.userData = { flash, fpt, rifle };
     shad(g);
     return g;
@@ -1282,8 +1282,9 @@
     function update(dt) {
       for (const o of list) {
         const u = o.userData;
-        if (SHOT) {   // screenshot mode: hold everyone up so the art can be judged
-          u.up = Math.min(1, u.up + dt * 3); o.position.y = lerp(u.hideY, u.seatY, u.up);
+        if (SHOT) {   // screenshot mode: hold varied peek heights (never a standing row)
+          const peek = [0.62, 0.40, 0.85, 0.48, 0.70][Enemies.list.indexOf(o) % 5];
+          u.up = Math.min(peek, u.up + dt * 3); o.position.y = lerp(u.hideY, u.seatY, u.up);
           o.rotation.y = Math.atan2(camera.position.x - o.position.x, camera.position.z - o.position.z);
           continue;
         }
@@ -1308,12 +1309,12 @@
         o.rotation.y = Math.atan2(camera.position.x - o.position.x, camera.position.z - o.position.z);
         // flash decay
         const f = o.userData.flash;
-        if (f.material.opacity > 0) { f.material.opacity = Math.max(0, f.material.opacity - dt * 5); o.userData.fpt.intensity = f.material.opacity * 4.2; }
+        if (f.material.opacity > 0) { f.material.opacity = Math.max(0, f.material.opacity - dt * 5); o.userData.fpt.intensity = f.material.opacity * 8.0; }
       }
     }
     function fire(o) {
       o.userData.flash.material.opacity = 1; o.userData.flash.material.rotation = rnd(0, 6.28);
-      o.userData.fpt.intensity = 4.2;
+      o.userData.fpt.intensity = 8.0;
       Audio.enemyShot(o.position);
       Puffs.spawn(o.position.x - 0.85, o.position.y + 1.2, o.position.z + 0.35, 0x9aa7c0, 2);
       // a near-miss on the player: chip the boulder + whistle + nerve hit
@@ -1368,7 +1369,7 @@
     brim.position.set(0, 3.06, 0.01); g.add(brim);
     const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.36, 0.40, 10), hat);
     crown.position.set(0, 3.28, 0); g.add(crown);
-    b(0.78, 0.085, 0.78, toon(0xa87b3e, { flatShading: true }), 0, 3.11, 0);    // Aged Brass band — Crow only
+    b(0.80, 0.10, 0.80, toon(0xa87b3e, { flatShading: true, emissive: 0xa87b3e, emissiveIntensity: 0.5 }), 0, 3.11, 0);  // Aged Brass band — Crow only
     // long Sharps rifle, butt on the ground, barrel angled across him
     const sharps = new THREE.Group();
     const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.055, 3.05, 8), toon(0x22252e, { flatShading: true }));
@@ -1381,7 +1382,7 @@
     const glow = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.6), new THREE.MeshBasicMaterial({ map: TEX.glow, color: 0xffca7a, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
     glow.position.set(1.25, 2.75, 0.45); g.add(glow);
     const pt = new THREE.PointLight(0xffc070, 0, 14); pt.position.set(1.3, 2.8, 0.7); g.add(pt);
-    g.position.set(-7.5, 1.05, -23.5); g.scale.setScalar(1.12);
+    g.position.set(-9.0, 1.05, -22.5); g.scale.setScalar(1.5);
     shad(g);
     scene.add(g);
 
@@ -1464,10 +1465,10 @@
     const tex = new THREE.CanvasTexture(c);
     // [z, y, height, width, colour, opacity]
     const layers = [
-      [-31, 0.3, 7.0, 160, TOD.mist[0], 0.52 * TOD.mistI],   // haze hugging the far bank
-      [-23, 0.1, 5.4, 150, TOD.mist[1], 0.40 * TOD.mistI],
-      [-13, 0.0, 3.8, 140, TOD.mist[2], 0.30 * TOD.mistI],   // mid-river mist
-      [-4, -0.1, 2.6, 130, TOD.mist[3], 0.22 * TOD.mistI],
+      [-31, 0.3, 7.0, 160, TOD.mist[0], 0.20 * TOD.mistI],   // haze hugging the far bank
+      [-23, 0.1, 5.4, 150, TOD.mist[1], 0.15 * TOD.mistI],
+      [-13, 0.0, 3.8, 140, TOD.mist[2], 0.11 * TOD.mistI],   // mid-river mist
+      [-4, -0.1, 2.6, 130, TOD.mist[3], 0.08 * TOD.mistI],
     ];
     for (const L of layers) {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(L[3], L[2]),
@@ -1749,7 +1750,7 @@
     if (cine) {
       // Frame Jody from over his shoulder; he yaws with the player's aim.
       Jody.group.visible = true; Colt.group.visible = false;
-      Jody.group.rotation.y = 0.10 + player.yaw * 0.55;
+      Jody.group.rotation.y = 0.34 + player.yaw * 0.55;
       const base = Jody.group.position;
       const off = CINE.offset.clone().applyAxisAngle(_up, player.yaw * 0.55);
       camera.position.set(base.x + off.x, base.y + off.y, base.z + off.z);
@@ -1817,7 +1818,7 @@
   window.__dbg = { yaw: () => player.yaw, pitch: () => player.pitch, ammo: () => ammo, puffs: () => Puffs.count(), enemies: () => Enemies.list.length };
   window.__fire = () => fire();
   window.__reload = () => { ammo = 6; updateRounds(); };
-  window.__enemyFire = () => { for (const o of Enemies.list) { o.userData.flash.material.opacity = 1; o.userData.fpt.intensity = 4.2; } };
+  window.__enemyFire = () => { for (const o of Enemies.list) { o.userData.flash.material.opacity = 1; o.userData.fpt.intensity = 8.0; } };
   window.__three = { scene, camera, THREE, cliffs };
   window.__probe = function () {
     const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
