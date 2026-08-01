@@ -860,8 +860,16 @@
      ========================================================================= */
   // An outlaw built silhouette-first: wide hat brim, coat shoulders flaring to a skirt,
   // legs apart, rifle up across the body. Bold simple masses per the production rules.
-  function makeOutlaw(color, scarfCol) {
+  // Lathe profile helper — smooth, shaped volumes (coat, hat crown) from a silhouette.
+  function lathe(profile, seg, mat) {
+    const pts = profile.map((p) => new THREE.Vector2(p[0], p[1]));
+    return new THREE.Mesh(new THREE.LatheGeometry(pts, seg || 12), mat);
+  }
+  // `variant` shifts build, stance and gear so the gang doesn't read as clones.
+  function makeOutlaw(color, scarfCol, variant) {
     const g = new THREE.Group();
+    const V = variant || 0;
+    const build = [1.0, 1.09, 0.94, 1.04, 0.97][V % 5];
     const cloth = toon(color, { flatShading: true });
     const dark = toon(COL.cloth, { flatShading: true });
     const skin = toon(COL.skin, { flatShading: true });
@@ -869,47 +877,67 @@
     const scarf = toon(scarfCol == null ? COL.olive : scarfCol, { flatShading: true });
     const steel = toonMetal(0x252a35, { flatShading: true });
     const wood = toon(0x4a2c14, { flatShading: true });
+    const vest = toon([0x2b2333, 0x33291f, 0x24303f, 0x392a2a, 0x2a3327][V % 5], { flatShading: true });
+    const glove = toon(0x4a3524, { flatShading: true });
     function b(w, h, d, mat, x, y, z, rz) {
       const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
       m.position.set(x, y, z); if (rz) m.rotation.z = rz; g.add(m); return m;
     }
-    // legs (planted apart — reads as a stance even in silhouette)
-    b(0.17, 0.52, 0.19, dark, -0.14, 0.26, 0);
-    b(0.17, 0.52, 0.19, dark, 0.15, 0.26, 0);
-    b(0.21, 0.10, 0.26, dark, -0.14, 0.05, 0.03);                     // boots
-    b(0.21, 0.10, 0.26, dark, 0.15, 0.05, 0.03);
-    // coat skirt flares below the belt — the western silhouette
-    const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.42, 0.44, 7), cloth);
-    skirt.position.set(0, 0.70, 0); g.add(skirt);
-    b(0.60, 0.10, 0.34, dark, 0, 0.90, 0);                            // gunbelt
-    // torso: broad shoulders tapering down
-    const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.28, 0.56, 7), cloth);
-    torso.position.set(0, 1.22, 0); g.add(torso);
-    b(0.66, 0.14, 0.32, cloth, 0, 1.44, 0);                           // shoulder yoke
-    b(0.26, 0.12, 0.28, scarf, 0, 1.53, 0.02);                        // neck scarf
-    // head + the hat (biggest identity read)
-    const head = b(0.23, 0.25, 0.23, skin, 0, 1.68, 0);
-    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.44, 0.045, 9), hat);
-    brim.position.set(0, 1.79, 0.01); g.add(brim);
-    const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.21, 0.24, 8), hat);
-    crown.position.set(0, 1.92, 0); g.add(crown);
-    // arms up holding the rifle
-    b(0.15, 0.44, 0.15, cloth, -0.36, 1.20, 0.10, 0.35);
-    b(0.15, 0.40, 0.15, cloth, 0.36, 1.24, 0.14, -0.30);
-    // rifle held across, angled toward the player
+    // stance: legs planted at slightly different angles per man
+    const stance = [0.10, 0.16, 0.06, 0.13, 0.09][V % 5];
+    b(0.17, 0.54, 0.20, dark, -0.15, 0.28, 0, stance);
+    b(0.17, 0.54, 0.20, dark, 0.16, 0.28, 0.02, -stance * 0.6);
+    b(0.22, 0.11, 0.28, dark, -0.18, 0.05, 0.03);
+    b(0.22, 0.11, 0.28, dark, 0.19, 0.05, 0.05);
+    // coat: shaped lathe silhouette, waist pinched, hem flaring
+    const coat = lathe([[0.02, 0], [0.30, 0.02], [0.40, 0.10], [0.42, 0.30],
+      [0.34, 0.52], [0.30, 0.70], [0.33, 0.86], [0.38, 1.00], [0.30, 1.06], [0.02, 1.08]], 13, cloth);
+    coat.position.set(0, 0.52, 0); coat.scale.set(build, 1, build * 0.92); g.add(coat);
+    b(0.62, 0.09, 0.36, dark, 0, 0.92, 0);
+    b(0.10, 0.13, 0.10, toon(0xb08a3c, { flatShading: true }), 0, 0.92, 0.19);
+    b(0.14, 0.20, 0.11, dark, 0.27, 0.83, 0.14, 0.2);
+    b(0.26, 0.44, 0.30, vest, 0, 1.32, 0.06);
+    const torso = lathe([[0.02, 0], [0.30, 0.01], [0.34, 0.16], [0.36, 0.40],
+      [0.30, 0.56], [0.02, 0.58]], 13, cloth);
+    torso.position.set(0, 1.12, 0); torso.scale.set(build, 1, build * 0.9); g.add(torso);
+    b(0.70 * build, 0.13, 0.34, cloth, 0, 1.62, 0);
+    b(0.28, 0.14, 0.30, scarf, 0, 1.71, 0.03);
+    b(0.20, 0.10, 0.24, scarf, 0, 1.65, 0.14);
+    b(0.235, 0.26, 0.235, skin, 0, 1.87, 0);
+    if (V % 3 === 0) b(0.22, 0.10, 0.20, toon(0x3a2a20, { flatShading: true }), 0, 1.78, 0.03);
+    // brim: shallow cone so it curls rather than reading as a flat disc
+    const brim = lathe([[0.03, 0.045], [0.20, 0.035], [0.34, 0.012], [0.44, 0], [0.46, 0.05]], 14, hat);
+    brim.position.set(0, 1.98, 0.01); g.add(brim);
+    const crown = lathe([[0.02, 0], [0.19, 0.01], [0.21, 0.14], [0.185, 0.26], [0.02, 0.28]], 12, hat);
+    crown.position.set(0, 1.99, 0); g.add(crown);
+    b(0.40, 0.045, 0.40, toon(0x1e222e, { flatShading: true }), 0, 2.04, 0);
+    // arms: upper + forearm, angled per pose
+    const aim = [0.34, 0.42, 0.28, 0.38, 0.31][V % 5];
+    b(0.155, 0.40, 0.16, cloth, -0.36 * build, 1.40, 0.06, aim);
+    b(0.145, 0.34, 0.15, cloth, -0.46 * build, 1.15, 0.20, aim * 1.5);
+    b(0.155, 0.38, 0.16, cloth, 0.36 * build, 1.42, 0.10, -aim * 0.8);
+    b(0.14, 0.30, 0.15, cloth, 0.30 * build, 1.20, 0.24, -aim * 0.4);
+    b(0.115, 0.10, 0.13, glove, -0.50 * build, 1.00, 0.28);
+    b(0.115, 0.10, 0.13, glove, 0.27 * build, 1.06, 0.30);
+    // lever rifle shouldered across
     const rifle = new THREE.Group();
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 1.25, 6), steel);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.030, 1.30, 7), steel);
     barrel.rotation.z = Math.PI / 2; rifle.add(barrel);
-    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.11, 0.075), wood);
-    stock.position.set(0.60, -0.04, 0); rifle.add(stock);
-    const lever = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.09, 0.06), steel);
-    lever.position.set(0.30, -0.08, 0); rifle.add(lever);
-    rifle.position.set(-0.05, 1.30, 0.22); rifle.rotation.y = -0.12; rifle.rotation.z = 0.10;
+    const mag = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 1.0, 6), steel);
+    mag.rotation.z = Math.PI / 2; mag.position.set(0.06, -0.045, 0); rifle.add(mag);
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.50, 0.125, 0.08), wood);
+    stock.position.set(0.63, -0.05, 0); stock.rotation.z = -0.07; rifle.add(stock);
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.09, 0.07), wood);
+    grip.position.set(-0.30, -0.02, 0); rifle.add(grip);
+    const lever = new THREE.Mesh(new THREE.TorusGeometry(0.055, 0.014, 5, 8, Math.PI * 1.2), steel);
+    lever.rotation.y = Math.PI / 2; lever.position.set(0.28, -0.10, 0); rifle.add(lever);
+    rifle.position.set(-0.08, 1.16, 0.30); rifle.rotation.y = -0.12;
+    rifle.rotation.z = 0.06 + (V % 3) * 0.05;
     g.add(rifle);
     // muzzle flash at the barrel tip
     const flash = new THREE.Mesh(new THREE.PlaneGeometry(0.55, 0.55), new THREE.MeshBasicMaterial({ map: TEX.flash, color: COL.muzzle, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
-    flash.position.set(-0.70, 1.36, 0.28); g.add(flash);
-    const fpt = new THREE.PointLight(0xffb060, 0, 5.5); fpt.position.set(-0.85, 1.38, 0.4); g.add(fpt);
+    flash.position.set(-0.76, 1.20, 0.34); g.add(flash);
+    const fpt = new THREE.PointLight(0xffb060, 0, 5.5); fpt.position.set(-0.92, 1.22, 0.46); g.add(fpt);
     g.userData = { flash, fpt, rifle };
     shad(g);
     return g;
@@ -925,7 +953,7 @@
       { x: 20, y: 0.3, z: -11, hide: -1.9, color: 0x352838, scarf: 0x6a3a2a },
     ];
     for (const s of seats) {
-      const o = makeOutlaw(s.color, s.scarf);
+      const o = makeOutlaw(s.color, s.scarf, seats.indexOf(s));
       o.position.set(s.x, s.y + s.hide, s.z);
       o.userData.seatY = s.y; o.userData.hideY = s.y + s.hide;
       o.userData.state = 'down'; o.userData.t = rnd(1.5, 5); o.userData.up = 0;
@@ -968,7 +996,7 @@
       o.userData.flash.material.opacity = 1; o.userData.flash.material.rotation = rnd(0, 6.28);
       o.userData.fpt.intensity = 1.8;
       Audio.enemyShot(o.position);
-      Puffs.spawn(o.position.x - 0.8, o.position.y + 1.35, o.position.z + 0.3, 0x9aa7c0, 2);
+      Puffs.spawn(o.position.x - 0.85, o.position.y + 1.2, o.position.z + 0.35, 0x9aa7c0, 2);
       // a near-miss on the player: chip the boulder + whistle + nerve hit
       if (Math.random() < 0.6) NearMiss.trigger();
     }
