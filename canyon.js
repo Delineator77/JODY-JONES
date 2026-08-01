@@ -266,16 +266,33 @@
     for (let k = 0; k < (oct || 4); k++) { s += a * vnoise(fx, fy); fx *= 2.03; fy *= 2.01; a *= 0.5; }
     return s;
   }
+  // 3D value noise — needed so rock displacement is a function of DIRECTION, which keeps
+  // duplicated vertices (Icosahedron is non-indexed) in agreement instead of tearing.
+  function vnoise3(x, y, z) {
+    const i = Math.floor(x), j = Math.floor(y), k = Math.floor(z);
+    const fx = x - i, fy = y - j, fz = z - k;
+    const h = (a, b, c) => { const s = Math.sin(a * 127.1 + b * 311.7 + c * 74.7) * 43758.5453; return s - Math.floor(s); };
+    const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy), w = fz * fz * (3 - 2 * fz);
+    const l = (a, b, t) => a + (b - a) * t;
+    return l(
+      l(l(h(i, j, k), h(i + 1, j, k), u), l(h(i, j + 1, k), h(i + 1, j + 1, k), u), v),
+      l(l(h(i, j, k + 1), h(i + 1, j, k + 1), u), l(h(i, j + 1, k + 1), h(i + 1, j + 1, k + 1), u), v), w);
+  }
+  function fbm3(x, y, z, oct) {
+    let s = 0, a = 0.5, m = 1;
+    for (let n = 0; n < (oct || 4); n++) { s += a * vnoise3(x * m, y * m, z * m); m *= 2.02; a *= 0.5; }
+    return s;
+  }
 
   const TEX = {
     // Sedimentary strata: strong horizontal bedding lines + grain between them.
     // Mostly isotropic rock blotching. Box faces map UVs in different orientations, so a
     // strongly directional pattern reads as wood grain on half the faces.
     rockNormal: normalMapFrom(256, (u, v) => {
-      const warp = fbm(u * 2.0, v * 2.0, 4) * 3.0;
-      const bedding = (Math.sin(v * 11 + warp) * 0.5 + 0.5) * 0.30;   // gentle bedding hint
-      return bedding + fbm(u * 6, v * 6, 5) * 1.0 + fbm(u * 19, v * 19, 4) * 0.4;
-    }, 9, [2, 2]),
+      const warp = fbm(u * 1.5, v * 1.5, 4) * 2.4;
+      const bedding = (Math.sin(v * 6 + warp) * 0.5 + 0.5) * 0.55;    // broad sedimentary bedding
+      return bedding + fbm(u * 2.5, v * 2.5, 5) * 1.15 + fbm(u * 8, v * 8, 4) * 0.28;
+    }, 9, [1, 1]),
     // Coarser, blockier relief for boulders and banks.
     stoneNormal: normalMapFrom(256, (u, v) =>
       fbm(u * 7, v * 7, 5) * 1.0 + fbm(u * 24, v * 24, 4) * 0.35, 20, [2, 2]),
@@ -288,15 +305,32 @@
   /* =========================================================================
      ROCK / BOULDER GEOMETRY  (chunky faceted masses)
      ========================================================================= */
-  function rockGeo(radius, squashY, jitter) {
-    const g = new THREE.IcosahedronGeometry(radius, 1);
+  // Fractured river boulder. Displacement is a deterministic function of the vertex
+  // DIRECTION (not per-vertex random), so the duplicated verts of a non-indexed
+  // icosahedron stay welded — random jitter tore them into glass shards.
+  function rockGeo(radius, squashY, jitter, seed) {
+    const g = new THREE.IcosahedronGeometry(radius, 3);
     const p = g.attributes.position;
+    const s = seed == null ? rnd(0, 40) : seed;
+    const v = new THREE.Vector3();
+    const amt = jitter == null ? 0.28 : jitter;
     for (let i = 0; i < p.count; i++) {
-      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-      const j = 1 + rnd(-jitter, jitter);
-      p.setXYZ(i, x * j, y * j * squashY, z * j);
+      v.set(p.getX(i), p.getY(i), p.getZ(i));
+      const d = v.clone().normalize();
+      // big lumpy masses + medium bevels, then quantised into flat fracture planes
+      let n = fbm3(d.x * 1.5 + s, d.y * 1.5 + s, d.z * 1.5 + s, 3) - 0.5;
+      n += (fbm3(d.x * 3.6 + s, d.y * 3.6 + s, d.z * 3.6 + s, 3) - 0.5) * 0.5;
+      const facets = 5;
+      n = Math.round(n * facets) / facets;                 // hard planes, like cleaved stone
+      n += (fbm3(d.x * 9 + s, d.y * 9 + s, d.z * 9 + s, 2) - 0.5) * 0.12;  // slight surface break-up
+      const scale = 1 + n * amt * 2.4;
+      v.multiplyScalar(scale);
+      v.y *= squashY;
+      v.y = Math.max(v.y, -radius * squashY * 0.62);       // flatten the buried underside
+      p.setXYZ(i, v.x, v.y, v.z);
     }
     p.needsUpdate = true; g.computeVertexNormals();
+    g.computeBoundingSphere();
     return g;
   }
   function makeRock(radius, mat, opts) {
@@ -318,7 +352,7 @@
      ========================================================================= */
   // Kept deliberately low-sum: lit toon surfaces must not exceed 1.0 or the authored
   // flat colors clip toward white and the graphic palette is lost.
-  const hemi = new THREE.HemisphereLight(0x4a6dab, 0x101a30, 1.05); scene.add(hemi);
+  const hemi = new THREE.HemisphereLight(0x41608f, 0x0e1728, 0.78); scene.add(hemi);
   scene.add(new THREE.AmbientLight(0x22355e, 0.46));
   // The one warm key: low and raking from upstream-left, so it throws long shadows
   // ACROSS the far bank toward the viewer.
@@ -396,9 +430,16 @@
       geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
       // LIT now (was unlit): the baked vertex colors act as albedo and real light +
       // shadow does the sculpting, which is what gives the rock volume.
+      // Scale UVs to WORLD size so texel density is uniform. Box faces are 0..1 regardless
+      // of their real dimensions, which stretched the rock texture into vertical scratches
+      // on tall columns.
+      const uv = geo.attributes.uv;
+      const TEXEL = 17.0;  // world units per texture tile (big rock forms, not pebbles)
+      for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) * (w / TEXEL), uv.getY(k) * (h / TEXEL));
+      uv.needsUpdate = true;
       const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
         vertexColors: true, roughness: 0.97, metalness: 0.0, flatShading: true,
-        normalMap: TEX.rockNormal, normalScale: new THREE.Vector2(0.16, 0.16), fog: true,
+        normalMap: TEX.rockNormal, normalScale: new THREE.Vector2(0.34, 0.34), fog: true,
       }));
       m.position.set(cx, h / 2, rnd(-0.5, 0.5) * depthAmt);
       m.frustumCulled = false;
@@ -567,13 +608,13 @@
   function scatterRocks() {
     const nearSpots = [[-9, 4.4, 1.1], [7, 4.0, 1.0], [-3, 3.4, 0.8], [12, 5.0, 1.3]];
     for (const s of nearSpots) {
-      const r = makeRock(s[2], toon(COL.rockShadow, { flatShading: true }), { squashY: 0.62 });
+      const r = makeRock(s[2], toon(0x101a2c, { flatShading: true, roughness: 0.6 }), { squashY: 0.62 });
       r.position.set(s[0], s[2] * 0.4, s[1]); world.add(r);
     }
     // river boulders
     for (let i = 0; i < 9; i++) {
       const rr = rnd(0.4, 1.1);
-      const r = makeRock(rr, toon(COL.rockWet, { flatShading: true }), { squashY: 0.5 });
+      const r = makeRock(rr, toon(0x14203a, { flatShading: true, roughness: 0.55 }), { squashY: 0.5 });
       r.position.set(rnd(-24, 24), rr * 0.18, rnd(-6, 2)); world.add(r); riverRocks.push(r);
     }
     // far-bank cover boulders
@@ -584,6 +625,47 @@
     }
   }
   scatterRocks();
+
+  // Contact shadows. The river is a custom ShaderMaterial so it cannot receive the
+  // shadow map; without these the boulders look pasted onto the surface. A soft dark
+  // ellipse laid just above the waterline grounds them.
+  (function contactShadows() {
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const x = c.getContext('2d');
+    const g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+    g.addColorStop(0, 'rgba(4,10,26,0.85)'); g.addColorStop(0.55, 'rgba(5,12,30,0.45)');
+    g.addColorStop(1, 'rgba(5,12,30,0)');
+    x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+    const tex = new THREE.CanvasTexture(c);
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, fog: true });
+    for (const r of riverRocks) {
+      const rad = (r.geometry.boundingSphere ? r.geometry.boundingSphere.radius : 1) * 1.9;
+      const q = new THREE.Mesh(new THREE.PlaneGeometry(rad, rad * 0.72), mat);
+      q.rotation.x = -Math.PI / 2;
+      q.position.set(r.position.x + 0.12, 0.055, r.position.z + 0.18);
+      q.renderOrder = 2;
+      world.add(q);
+    }
+  })();
+
+  // Break up the far bank's straight waterline with rubble, so it stops reading as a slab.
+  (function bankRubble() {
+    for (let i = 0; i < 22; i++) {
+      const rr = rnd(0.30, 0.95);
+      const m = makeRock(rr, toon(i % 3 === 0 ? 0x7d4527 : 0x8f5330, { flatShading: true }), { squashY: 0.55 });
+      m.position.set(rnd(-30, 30), rnd(0.05, 0.35), rnd(-8.4, -6.2));
+      m.rotation.y = rnd(0, 6.28);
+      world.add(m);
+    }
+    // a few larger blocks sitting proud of the bank edge
+    for (let i = 0; i < 7; i++) {
+      const rr = rnd(0.9, 1.7);
+      const m = makeRock(rr, toon(0x8a4d2c, { flatShading: true }), { squashY: 0.7 });
+      m.position.set(rnd(-28, 28), rnd(0.3, 0.9), rnd(-10.5, -8.5));
+      m.rotation.y = rnd(0, 6.28);
+      world.add(m);
+    }
+  })();
 
   // Reeds (thin swaying quads) along the near bank
   const reeds = [];
@@ -616,11 +698,11 @@
   /* ----- Foreground cover boulder (the player's rock) --------------------- */
   (function foregroundBoulder() {
     const grp = new THREE.Group();
-    const main = makeRock(3.4, toon(0x1e2a3e, { flatShading: true, roughness: 0.72 }), { squashY: 0.8, jitter: 0.34, ink: 0.0055 });
+    const main = makeRock(3.4, toon(0x0e1626, { flatShading: true, roughness: 0.62 }), { squashY: 0.8, jitter: 0.34, ink: 0.0055 });
     main.position.set(-0.4, 0.2, 0); grp.add(main);
-    const side = makeRock(2.1, toon(0x243046, { flatShading: true, roughness: 0.72 }), { squashY: 0.75, jitter: 0.32, ink: 0.005 });
+    const side = makeRock(2.1, toon(0x121b2c, { flatShading: true, roughness: 0.62 }), { squashY: 0.75, jitter: 0.32, ink: 0.005 });
     side.position.set(2.6, -0.2, 0.6); grp.add(side);
-    const small = makeRock(1.4, toon(0x1a2436, { flatShading: true, roughness: 0.7 }), { squashY: 0.7, ink: 0.004 });
+    const small = makeRock(1.4, toon(0x0c1422, { flatShading: true, roughness: 0.6 }), { squashY: 0.7, ink: 0.004 });
     small.position.set(-3.0, -0.4, 0.7); grp.add(small);
     grp.position.set(-2.4, -1.7, 6.6);   // foreground cover lip, bottom-left
     shad(grp);
