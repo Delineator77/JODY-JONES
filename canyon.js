@@ -66,6 +66,7 @@
   const composer = new THREE.EffectComposer(renderer);
   composer.addPass(new THREE.RenderPass(scene, camera));
   const bloom = new THREE.UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.35, 0.7, 0.82);
+  if (location.search.indexOf('nobloom') >= 0) bloom.strength = 0;
   composer.addPass(bloom);
   // Full-screen INK pass — Sobel edge detect on the rendered frame draws navy comic
   // outlines at every silhouette + color boundary. This is what sells the graphic-novel look.
@@ -190,13 +191,15 @@
   /* =========================================================================
      LIGHTING  — cool shadow world, one low warm sun for rim + cliff glow
      ========================================================================= */
-  const hemi = new THREE.HemisphereLight(0x2a3a66, 0x0c1120, 0.9); scene.add(hemi);
-  scene.add(new THREE.AmbientLight(0x152340, 0.5));
-  const sun = new THREE.DirectionalLight(0xffb063, 1.4);      // low, warm, from behind far bank
+  // Kept deliberately low-sum: lit toon surfaces must not exceed 1.0 or the authored
+  // flat colors clip toward white and the graphic palette is lost.
+  const hemi = new THREE.HemisphereLight(0x2a3a66, 0x0c1120, 0.45); scene.add(hemi);
+  scene.add(new THREE.AmbientLight(0x152340, 0.30));
+  const sun = new THREE.DirectionalLight(0xffb063, 0.85);      // low, warm, from behind far bank
   sun.position.set(-16, 30, -34); scene.add(sun);
-  const coolFill = new THREE.DirectionalLight(0x4664a0, 0.55); // sky fill from above
+  const coolFill = new THREE.DirectionalLight(0x4664a0, 0.28); // sky fill from above
   coolFill.position.set(10, 24, 20); scene.add(coolFill);
-  const bounce = new THREE.DirectionalLight(0x243a5e, 0.35);   // river bounce, from below-front
+  const bounce = new THREE.DirectionalLight(0x243a5e, 0.18);   // river bounce, from below-front
   bounce.position.set(0, -6, 12); scene.add(bounce);
 
   /* =========================================================================
@@ -205,12 +208,19 @@
   const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
   // Canyon wall color as a function of absolute world height + how sunlit the column is.
   // Navy shadow at the floor → burnt-vermillion sunlit faces → amber/ivory blazing tops.
-  function cliffColor(worldY, lit) {
-    const h = clamp(worldY / 74, 0, 1.15);
+  // worldY: absolute height (drives navy -> vermillion). topY: this column's own summit,
+  // so the amber/ivory sun blaze is a NARROW rim on the highest rock rather than a
+  // huge white mass (which read as pale slivers on edge-on walls).
+  function cliffColor(worldY, lit, topY) {
+    const h = clamp(worldY / 60, 0, 1);
     const c = new THREE.Color(COL.indigo);
-    c.lerp(new THREE.Color(COL.vermillion), smoothstep(0.04, 0.50, h));
-    c.lerp(new THREE.Color(COL.amber), smoothstep(0.58, 0.90, h) * 0.9);
-    c.lerp(new THREE.Color(COL.ivory), smoothstep(0.86, 1.12, h) * 0.55);
+    c.lerp(new THREE.Color(COL.vermillion), smoothstep(0.04, 0.52, h));
+    if (topY != null) {
+      const fromTop = topY - worldY;                       // 0 at the summit
+      const blaze = smoothstep(14, 2, fromTop) * clamp(topY / 34, 0, 1) * lit;
+      c.lerp(new THREE.Color(COL.amber), blaze * 0.85);
+      c.lerp(new THREE.Color(COL.ivory), smoothstep(5, 0.5, fromTop) * clamp(topY / 40, 0, 1) * lit * 0.30);
+    }
     // recessed (shadow) columns stay cool and dark; buttresses catch the warm light
     return new THREE.Color(COL.rockShadow).lerp(c, 0.30 + 0.70 * lit);
   }
@@ -222,7 +232,7 @@
     const colW = width / cols;
     for (let i = 0; i < cols; i++) {
       const cx = -width / 2 + (i + 0.5) * colW;
-      const w = colW * rnd(0.9, 1.14);
+      const w = colW * rnd(1.10, 1.34);   // always overlap the neighbour — a gap shows sky as a bright sliver
       const prof = opts.profile ? opts.profile(i / (cols - 1)) : 1;
       const h = height * prof * (0.6 + 0.4 * (0.5 + 0.5 * Math.sin(i * 1.7) + 0.28 * Math.sin(i * 0.6 + 1.1)));
       const d = rnd(0.9, depthAmt);
@@ -231,7 +241,7 @@
       const pos = geo.attributes.position, colors = new Float32Array(pos.count * 3), c = new THREE.Color();
       for (let k = 0; k < pos.count; k++) {
         const wy = origin.y + h / 2 + pos.getY(k);   // absolute world height of this vertex
-        c.copy(cliffColor(wy, lit));
+        c.copy(cliffColor(wy, lit, origin.y + h));
         colors[k * 3] = c.r; colors[k * 3 + 1] = c.g; colors[k * 3 + 2] = c.b;
       }
       geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
@@ -331,21 +341,23 @@
         '  vec2 flow = vec2(uTime*1.4, uTime*0.25);\n' +
         '  float n = fbm(vP*vec2(0.9,1.7) - flow);\n' +
         '  float band = floor(n*4.0)/4.0;\n' +               // posterized broad masses
-        '  vec3 deep = vec3(0.055,0.10,0.205);\n' +
-        '  vec3 lit  = vec3(0.16,0.31,0.50);\n' +
+        '  vec3 deep = vec3(0.030,0.058,0.125);\n' +   // midnight navy channel
+        '  vec3 lit  = vec3(0.085,0.165,0.285);\n' +   // lit ripple
         '  vec3 col = mix(deep, lit, band*0.85 + 0.15);\n' +
         '  float f = fbm(vP*vec2(2.3,4.0) - flow*2.2);\n' +
         '  float caps = smoothstep(0.60,0.82,f);\n' +
         '  // SIGNATURE: a defined reflection streak running toward the viewer\n' +
         '  float streakX = sin(vP.y*0.30 + 0.6)*2.4 + sin(vP.y*0.85)*0.9;\n' +
         '  float streak = smoothstep(5.5, 0.0, abs(vP.x - streakX));\n' +
-        '  vec3 sunCol = mix(uSun, vec3(1.0,0.90,0.66), 0.35);\n' +
-        '  col = mix(col, sunCol, streak*0.82);\n' +
-        '  // foam caps — brighter only inside the reflection\n' +
-        '  col = mix(col, mix(vec3(0.80,0.85,0.92), sunCol, 0.5), caps*(0.2 + 0.5*streak));\n' +
+        '  // amber reflection — deliberately capped below clipping so it never blows to white\n' +
+        '  vec3 sunCol = uSun * 0.82;\n' +
+        '  col = mix(col, sunCol, streak*0.78);\n' +
+        '  // foam caps — a touch brighter only inside the reflection\n' +
+        '  col = mix(col, mix(vec3(0.42,0.47,0.55), sunCol, 0.55), caps*(0.18 + 0.42*streak));\n' +
         '  // shimmering specular along the streak\n' +
         '  float glint = pow(max(0.0, sin(vP.x*2.2 + vP.y*1.5 - uTime*5.0)*0.5+0.5), 6.0);\n' +
-        '  col += sunCol * glint * streak * 0.55;\n' +
+        '  col += sunCol * glint * streak * 0.22;\n' +
+        '  col = min(col, vec3(0.94));\n' +
         '  gl_FragColor = vec4(col, 1.0);\n' +
         '  #include <fog_fragment>\n' +
         '}',
@@ -464,41 +476,82 @@
      ========================================================================= */
   const Colt = (function () {
     const grp = new THREE.Group();
-    const steel = toonMetal(0x2a2f3a, { flatShading: true });
+    // Viewmodel uses UNLIT color with per-face shading baked into vertex colors: it sits
+    // inches from the lens where stacked scene lights blow it out, and baking gives exact
+    // control of the plane separation (production rule: "use color to define planes").
+    const VM_LIGHT = new THREE.Vector3(-0.45, 0.78, 0.44).normalize();
+    function bakeFaces(geo, hex) {
+      const g = geo.index ? geo.toNonIndexed() : geo;
+      const pos = g.attributes.position, n = g.attributes.normal;
+      const base = new THREE.Color(hex), col = new THREE.Color();
+      const arr = new Float32Array(pos.count * 3);
+      const nv = new THREE.Vector3();
+      for (let i = 0; i < pos.count; i += 3) {
+        nv.set(n.getX(i), n.getY(i), n.getZ(i));            // flat faces: normal is constant per tri
+        const d = nv.dot(VM_LIGHT);
+        // three hard bands — cel, not a gradient
+        const band = d > 0.45 ? 1.24 : (d > -0.05 ? 0.92 : 0.62);
+        col.copy(base).multiplyScalar(band);
+        for (let k = 0; k < 3; k++) { arr[(i + k) * 3] = col.r; arr[(i + k) * 3 + 1] = col.g; arr[(i + k) * 3 + 2] = col.b; }
+      }
+      g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+      return g;
+    }
+    const VM_MAT = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false });
+    // `flat(hex)` now returns a tag object; geometry gets baked at mesh-build time.
+    const flat = (hex) => ({ __bake: hex });
+    const steel = flat(0x28323f);
+    const steelDark = flat(0x18202c);
     const steelInk = 0.006;
-    const wood = toon(0x5a3418, { flatShading: true });
-    const glove = toon(0x4a3524, { flatShading: true });
-    const cuff = toon(COL.cloth, { flatShading: true });
+    const wood = flat(0x6b3d1c);
+    const glove = flat(0x5a4029);
+    const cuff = flat(0x1b2440);
     function box(w, h, d, mat, x, y, z, rx, ry, rz) {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      const m = new THREE.Mesh(bakeFaces(new THREE.BoxGeometry(w, h, d), mat.__bake), VM_MAT);
       m.position.set(x, y, z); if (rx) m.rotation.x = rx; if (ry) m.rotation.y = ry; if (rz) m.rotation.z = rz;
       grp.add(m); return m;
     }
-    // barrel + frame
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.055, 0.62, 10), steel);
-    barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.02, -0.34); ink(barrel, steelInk); grp.add(barrel);
-    const frame = box(0.12, 0.15, 0.34, steel, 0, -0.02, -0.02); ink(frame, steelInk);
-    const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.16, 8), steel);
-    cyl.rotation.x = Math.PI / 2; cyl.position.set(0, -0.01, -0.02); ink(cyl, steelInk); grp.add(cyl);
-    // hammer + sight
-    box(0.03, 0.07, 0.05, steel, 0, 0.08, 0.12);
-    box(0.02, 0.03, 0.02, steel, 0, 0.1, -0.6);
-    // grip (angled) with wood
-    const grip = box(0.11, 0.26, 0.12, wood, 0, -0.2, 0.12, 0.4); ink(grip, steelInk);
-    // hand — glove wrapping the grip + cuff
-    const palm = box(0.15, 0.16, 0.17, glove, 0.02, -0.16, 0.14, 0.4); ink(palm, 0.005);
-    box(0.16, 0.06, 0.12, glove, 0.0, -0.05, 0.05, 0.2);         // fingers over frame
-    const forearm = box(0.17, 0.17, 0.5, cuff, 0.05, -0.34, 0.42, 0.5); ink(forearm, 0.005);
-    box(0.2, 0.2, 0.14, glove, 0.05, -0.28, 0.28, 0.5);          // wrist
+    const poncho = flat(0x5d6539);
+    function cyl(rt, rb, h, seg, mat, x, y, z, rx, rz) {
+      const m = new THREE.Mesh(bakeFaces(new THREE.CylinderGeometry(rt, rb, h, seg), mat.__bake), VM_MAT);
+      m.position.set(x, y, z); if (rx != null) m.rotation.x = rx; if (rz) m.rotation.z = rz;
+      grp.add(m); return m;
+    }
+    // --- Colt Peacemaker, barrel forward (-z) ---
+    const barrel = cyl(0.036, 0.038, 0.66, 10, steel, 0, 0.035, -0.40, Math.PI / 2); ink(barrel, steelInk);
+    cyl(0.020, 0.020, 0.44, 8, steelDark, 0, -0.012, -0.34, Math.PI / 2);  // ejector rod housing
+    const cylinder = cyl(0.072, 0.072, 0.19, 12, steel, 0, 0.012, -0.02, Math.PI / 2); ink(cylinder, steelInk);
+    const frame = box(0.088, 0.135, 0.30, steel, 0, 0.005, 0.06); ink(frame, steelInk);
+    box(0.026, 0.045, 0.05, steel, 0, 0.10, 0.20);                          // hammer spur
+    box(0.016, 0.026, 0.02, steel, 0, 0.085, -0.70);                        // front sight
+    // trigger guard + trigger
+    const guard = new THREE.Mesh(bakeFaces(new THREE.TorusGeometry(0.055, 0.012, 6, 10, Math.PI * 1.15), steelDark.__bake), VM_MAT);
+    guard.rotation.y = Math.PI / 2; guard.rotation.z = -0.35; guard.position.set(0, -0.085, 0.10); grp.add(guard);
+    box(0.014, 0.05, 0.016, steel, 0, -0.055, 0.10);
+    // grip: angled back, walnut, with a steel backstrap
+    const grip = box(0.078, 0.27, 0.115, wood, 0, -0.20, 0.235, 0.42); ink(grip, steelInk);
+    box(0.086, 0.10, 0.13, steelDark, 0, -0.075, 0.185, 0.42);              // frame/grip strap
+    // --- Jody's gloved hand on the grip ---
+    const palm = box(0.115, 0.175, 0.155, glove, 0.005, -0.165, 0.245, 0.42); ink(palm, 0.005);
+    box(0.125, 0.055, 0.10, glove, 0.0, -0.055, 0.145, 0.15);               // fingers curling to trigger
+    box(0.125, 0.048, 0.085, glove, 0.0, -0.105, 0.135, 0.15);
+    box(0.062, 0.075, 0.10, glove, -0.055, -0.075, 0.215, 0.30);            // thumb along the frame
+    // --- forearm: dark navy shirt sleeve under the olive poncho, with fringe ---
+    const wrist = box(0.155, 0.155, 0.14, glove, 0.02, -0.245, 0.335, 0.45); ink(wrist, 0.005);
+    const sleeve = box(0.175, 0.175, 0.30, cuff, 0.045, -0.335, 0.50, 0.45); ink(sleeve, 0.005);
+    const cape = box(0.30, 0.26, 0.34, poncho, 0.075, -0.44, 0.72, 0.45); ink(cape, 0.005);
+    for (let i = 0; i < 5; i++) {                                            // poncho fringe
+      box(0.022, 0.10, 0.022, poncho, -0.03 + i * 0.045, -0.575, 0.60 + i * 0.012, 0.45);
+    }
 
     // muzzle flash + smoke anchor
     const flash = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.9), new THREE.MeshBasicMaterial({ map: TEX.flash, color: COL.muzzle, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
-    flash.position.set(0, 0.02, -0.72); grp.add(flash);
+    flash.position.set(0, 0.035, -0.78); grp.add(flash);
     const flashPt = new THREE.PointLight(0xffb060, 0, 8); flashPt.position.set(0, 0.2, -1); grp.add(flashPt);
 
-    grp.position.set(0.30, -0.32, -0.62);
-    grp.rotation.y = -0.13; grp.rotation.z = 0.04; grp.rotation.x = 0.12;
-    grp.scale.setScalar(0.9);
+    grp.position.set(0.235, -0.175, -0.52);
+    grp.rotation.y = -0.17; grp.rotation.z = 0.05; grp.rotation.x = 0.05;
+    grp.scale.setScalar(0.74);
     camera.add(grp); scene.add(camera);
 
     let recoil = 0, flashT = 0, sway = new THREE.Vector2(), bob = 0;
@@ -530,31 +583,58 @@
   /* =========================================================================
      ENEMIES  — outlaws that peek briefly from cover (movement-first visibility)
      ========================================================================= */
-  function makeOutlaw(color) {
+  // An outlaw built silhouette-first: wide hat brim, coat shoulders flaring to a skirt,
+  // legs apart, rifle up across the body. Bold simple masses per the production rules.
+  function makeOutlaw(color, scarfCol) {
     const g = new THREE.Group();
     const cloth = toon(color, { flatShading: true });
     const dark = toon(COL.cloth, { flatShading: true });
     const skin = toon(COL.skin, { flatShading: true });
     const hat = toon(COL.hat, { flatShading: true });
-    function b(w, h, d, mat, x, y, z) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); g.add(m); return m; }
-    const torso = b(0.62, 0.72, 0.34, cloth, 0, 0.36, 0); ink(torso, 0.004);
-    b(0.66, 0.18, 0.36, dark, 0, 0.06, 0);                 // gunbelt
-    const head = b(0.26, 0.28, 0.26, skin, 0, 0.86, 0); ink(head, 0.004);
-    const brim = b(0.5, 0.06, 0.5, hat, 0, 0.98, 0); ink(brim, 0.004);
-    b(0.3, 0.2, 0.3, hat, 0, 1.06, 0);                      // crown
-    b(0.18, 0.5, 0.18, cloth, -0.36, 0.42, 0);              // arms
-    b(0.18, 0.5, 0.18, cloth, 0.36, 0.42, 0);
-    // rifle raised across cover
+    const scarf = toon(scarfCol == null ? COL.olive : scarfCol, { flatShading: true });
+    const steel = toonMetal(0x252a35, { flatShading: true });
+    const wood = toon(0x4a2c14, { flatShading: true });
+    function b(w, h, d, mat, x, y, z, rz) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      m.position.set(x, y, z); if (rz) m.rotation.z = rz; g.add(m); return m;
+    }
+    // legs (planted apart — reads as a stance even in silhouette)
+    b(0.17, 0.52, 0.19, dark, -0.14, 0.26, 0);
+    b(0.17, 0.52, 0.19, dark, 0.15, 0.26, 0);
+    b(0.21, 0.10, 0.26, dark, -0.14, 0.05, 0.03);                     // boots
+    b(0.21, 0.10, 0.26, dark, 0.15, 0.05, 0.03);
+    // coat skirt flares below the belt — the western silhouette
+    const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.42, 0.44, 7), cloth);
+    skirt.position.set(0, 0.70, 0); g.add(skirt);
+    b(0.60, 0.10, 0.34, dark, 0, 0.90, 0);                            // gunbelt
+    // torso: broad shoulders tapering down
+    const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.28, 0.56, 7), cloth);
+    torso.position.set(0, 1.22, 0); g.add(torso);
+    b(0.66, 0.14, 0.32, cloth, 0, 1.44, 0);                           // shoulder yoke
+    b(0.26, 0.12, 0.28, scarf, 0, 1.53, 0.02);                        // neck scarf
+    // head + the hat (biggest identity read)
+    const head = b(0.23, 0.25, 0.23, skin, 0, 1.68, 0);
+    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.44, 0.045, 9), hat);
+    brim.position.set(0, 1.79, 0.01); g.add(brim);
+    const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.21, 0.24, 8), hat);
+    crown.position.set(0, 1.92, 0); g.add(crown);
+    // arms up holding the rifle
+    b(0.15, 0.44, 0.15, cloth, -0.36, 1.20, 0.10, 0.35);
+    b(0.15, 0.40, 0.15, cloth, 0.36, 1.24, 0.14, -0.30);
+    // rifle held across, angled toward the player
     const rifle = new THREE.Group();
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.15, 6), toon(0x2a2f3a, { flatShading: true }));
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 1.25, 6), steel);
     barrel.rotation.z = Math.PI / 2; rifle.add(barrel);
-    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.1, 0.08), toon(0x4a2c14, { flatShading: true }));
-    stock.position.x = 0.55; rifle.add(stock);
-    rifle.position.set(0.2, 0.55, 0.18); rifle.rotation.y = -0.15; g.add(rifle);
-    // muzzle flash
-    const flash = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.7), new THREE.MeshBasicMaterial({ map: TEX.flash, color: COL.muzzle, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
-    flash.position.set(-0.55, 0.55, 0.2); g.add(flash);
-    const fpt = new THREE.PointLight(0xffb060, 0, 6); fpt.position.set(-0.7, 0.6, 0.3); g.add(fpt);
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.11, 0.075), wood);
+    stock.position.set(0.60, -0.04, 0); rifle.add(stock);
+    const lever = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.09, 0.06), steel);
+    lever.position.set(0.30, -0.08, 0); rifle.add(lever);
+    rifle.position.set(-0.05, 1.30, 0.22); rifle.rotation.y = -0.12; rifle.rotation.z = 0.10;
+    g.add(rifle);
+    // muzzle flash at the barrel tip
+    const flash = new THREE.Mesh(new THREE.PlaneGeometry(0.85, 0.85), new THREE.MeshBasicMaterial({ map: TEX.flash, color: COL.muzzle, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
+    flash.position.set(-0.70, 1.36, 0.28); g.add(flash);
+    const fpt = new THREE.PointLight(0xffb060, 0, 7); fpt.position.set(-0.85, 1.38, 0.4); g.add(fpt);
     g.userData = { flash, fpt, rifle };
     return g;
   }
@@ -562,14 +642,14 @@
     const list = [];
     // seat each outlaw behind a far-bank cover point at a chosen height
     const seats = [
-      { x: -18, y: 0.2, z: -8, hide: -1.0, color: 0x3a2a44 },
-      { x: -8, y: 0.4, z: -9, hide: -1.1, color: 0x2c2438 },
-      { x: 2.5, y: 1.4, z: -9.5, hide: -1.1, color: 0x40302a }, // on a shelf, higher
-      { x: 13, y: 0.5, z: -9, hide: -1.1, color: 0x2a3040 },
-      { x: 21, y: 0.3, z: -10, hide: -1.0, color: 0x352838 },
+      { x: -17, y: 0.2, z: -9, hide: -1.9, color: 0x3a2a44, scarf: 0x6a3a2a },
+      { x: -7.5, y: 0.4, z: -10, hide: -2.0, color: 0x2c2438, scarf: 0x555c37 },
+      { x: 3, y: 1.3, z: -11, hide: -2.0, color: 0x40302a, scarf: 0x7a4a2a }, // on a shelf, higher
+      { x: 12.5, y: 0.5, z: -10, hide: -2.0, color: 0x2a3040, scarf: 0x555c37 },
+      { x: 20, y: 0.3, z: -11, hide: -1.9, color: 0x352838, scarf: 0x6a3a2a },
     ];
     for (const s of seats) {
-      const o = makeOutlaw(s.color);
+      const o = makeOutlaw(s.color, s.scarf);
       o.position.set(s.x, s.y + s.hide, s.z);
       o.userData.seatY = s.y; o.userData.hideY = s.y + s.hide;
       o.userData.state = 'down'; o.userData.t = rnd(1.5, 5); o.userData.up = 0;
@@ -579,6 +659,11 @@
     function update(dt) {
       for (const o of list) {
         const u = o.userData;
+        if (SHOT) {   // screenshot mode: hold everyone up so the art can be judged
+          u.up = Math.min(1, u.up + dt * 3); o.position.y = lerp(u.hideY, u.seatY, u.up);
+          o.rotation.y = Math.atan2(camera.position.x - o.position.x, camera.position.z - o.position.z);
+          continue;
+        }
         if (!u.alive) { // sink and stay
           u.up = lerp(u.up, 0, dt * 6); o.position.y = lerp(u.hideY, u.seatY, u.up); continue;
         }
@@ -615,7 +700,7 @@
       for (const o of list) {
         if (!o.userData.alive || o.userData.up < 0.4) continue;
         const box = new THREE.Box3().setFromCenterAndSize(
-          new THREE.Vector3(o.position.x, o.position.y + 0.6, o.position.z), new THREE.Vector3(0.9, 1.4, 0.6));
+          new THREE.Vector3(o.position.x, o.position.y + 1.15, o.position.z), new THREE.Vector3(1.0, 2.1, 0.7));
         const hit = ray.ray.intersectBox(box, new THREE.Vector3());
         if (hit) { const d = hit.distanceTo(ray.ray.origin); if (d < bd) { bd = d; best = o; } }
       }
