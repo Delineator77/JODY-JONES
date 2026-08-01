@@ -44,6 +44,41 @@
   };
 
   /* =========================================================================
+     TIME OF DAY — the two canonical looks from the reference art, as swappable
+     tokens. Add ?night to the URL (or TOD.set('night')) for the silver-moon version.
+     ========================================================================= */
+  const TOD_PRESETS = {
+    dusk: {
+      key: 0xffc287, keyIntensity: 1.95, keyPos: [-46, 92, 40],
+      skyFill: 0x41608f, ground: 0x0e1728, hemi: 0.78,
+      ambient: 0x22355e, ambientI: 0.46,
+      fill: 0x5a7dc0, fillI: 0.34, bounce: 0x2c4a76, bounceI: 0.22,
+      fog: 0x33344f, fogDensity: 0.0115,
+      sky: [0xe89a52, 0x8a5a55, 0x141f38],
+      river: 0xf0993e,
+      grade: { shadow: 0x1b2a4e, light: 0xffd7a2, tint: 0.34, sat: 1.24 },
+      mist: [0xe0925a, 0xc07c58, 0x74849f, 0x4a5c85], mistI: 1.0,
+      bloom: 0.35,
+    },
+    night: {
+      // Moonlight: a cold, hard key. Everything reads midnight navy except the
+      // silver river reflection and whatever the gunfire lights.
+      key: 0xb3ccf5, keyIntensity: 1.5, keyPos: [-40, 96, 30],
+      skyFill: 0x2b4a86, ground: 0x070b14, hemi: 0.52,
+      ambient: 0x18274f, ambientI: 0.42,
+      fill: 0x3f5f9c, fillI: 0.20, bounce: 0x1c3157, bounceI: 0.16,
+      fog: 0x16203a, fogDensity: 0.0095,
+      sky: [0x40567f, 0x22304f, 0x080d1c],
+      river: 0xcfe0f5,
+      grade: { shadow: 0x101d3c, light: 0xcadcf6, tint: 0.42, sat: 1.10 },
+      mist: [0x50699c, 0x44578a, 0x36466e, 0x27334f], mistI: 0.85,
+      bloom: 0.5,
+    },
+  };
+  const TOD_NAME = location.search.indexOf('night') >= 0 ? 'night' : 'dusk';
+  const TOD = TOD_PRESETS[TOD_NAME];
+
+  /* =========================================================================
      RENDERER / SCENE / CAMERA
      ========================================================================= */
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -59,8 +94,8 @@
   dom.stage.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(COL.deep);
-  scene.fog = new THREE.FogExp2(0x33344f, 0.0115);  // aerial perspective: distance lifts + desaturates
+  scene.background = new THREE.Color(TOD.sky[2]);
+  scene.fog = new THREE.FogExp2(TOD.fog, TOD.fogDensity);   // aerial perspective
 
   const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.05, 900);
   const CAM_BASE = new THREE.Vector3(0, 1.9, 8.0);   // standing behind the boulder, looking over it
@@ -68,7 +103,7 @@
 
   const composer = new THREE.EffectComposer(renderer);
   composer.addPass(new THREE.RenderPass(scene, camera));
-  const bloom = new THREE.UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.35, 0.7, 0.82);
+  const bloom = new THREE.UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), TOD.bloom, 0.7, 0.82);
   if (location.search.indexOf('nobloom') >= 0) bloom.strength = 0;
   composer.addPass(bloom);
 
@@ -81,10 +116,10 @@
       tDiffuse: { value: null },
       uBands: { value: 7.0 },        // luminance steps (lower = flatter//more graphic)
       uMix: { value: 0.72 },         // how strongly to posterize
-      uSat: { value: 1.24 },
-      uShadowTint: { value: new THREE.Color(0x1b2a4e) },
-      uLightTint: { value: new THREE.Color(0xffd7a2) },
-      uTint: { value: 0.34 },
+      uSat: { value: TOD.grade.sat },
+      uShadowTint: { value: new THREE.Color(TOD.grade.shadow) },
+      uLightTint: { value: new THREE.Color(TOD.grade.light) },
+      uTint: { value: TOD.grade.tint },
     },
     vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
     fragmentShader:
@@ -352,12 +387,12 @@
      ========================================================================= */
   // Kept deliberately low-sum: lit toon surfaces must not exceed 1.0 or the authored
   // flat colors clip toward white and the graphic palette is lost.
-  const hemi = new THREE.HemisphereLight(0x41608f, 0x0e1728, 0.78); scene.add(hemi);
-  scene.add(new THREE.AmbientLight(0x22355e, 0.46));
+  const hemi = new THREE.HemisphereLight(TOD.skyFill, TOD.ground, TOD.hemi); scene.add(hemi);
+  scene.add(new THREE.AmbientLight(TOD.ambient, TOD.ambientI));
   // The one warm key: low and raking from upstream-left, so it throws long shadows
   // ACROSS the far bank toward the viewer.
-  const sun = new THREE.DirectionalLight(0xffc287, 1.95);
-  sun.position.set(-46, 92, 40);   // high over the player's left shoulder — clears the canyon rim
+  const sun = new THREE.DirectionalLight(TOD.key, TOD.keyIntensity);
+  sun.position.set(TOD.keyPos[0], TOD.keyPos[1], TOD.keyPos[2]);  // high, clears the canyon rim
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   const sc = sun.shadow.camera;
@@ -376,14 +411,15 @@
     f.material.colorWrite = false; f.renderOrder = -999;
     scene.add(f);
   })();
-  const coolFill = new THREE.DirectionalLight(0x5a7dc0, 0.34); // sky fill from above
+  const coolFill = new THREE.DirectionalLight(TOD.fill, TOD.fillI); // sky fill from above
   coolFill.position.set(14, 26, 22); scene.add(coolFill);
-  const bounce = new THREE.DirectionalLight(0x2c4a76, 0.22);   // river bounce, from below-front
+  const bounce = new THREE.DirectionalLight(TOD.bounce, TOD.bounceI);  // river bounce
   bounce.position.set(0, -6, 12); scene.add(bounce);
 
   /* =========================================================================
      CANYON WALLS  — enormous, vertex-colored indigo→amber, narrow sky
      ========================================================================= */
+
   const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
   // Canyon wall color as a function of absolute world height + how sunlit the column is.
   // Navy shadow at the floor → burnt-vermillion sunlit faces → amber/ivory blazing tops.
@@ -465,7 +501,7 @@
     const m = new THREE.ShaderMaterial({
       side: THREE.BackSide, fog: false, depthWrite: false,
       uniforms: {
-        cLow: { value: new THREE.Color(COL.skyLow) }, cMid: { value: new THREE.Color(COL.skyMid) }, cHigh: { value: new THREE.Color(COL.skyHigh) },
+        cLow: { value: new THREE.Color(TOD.sky[0]) }, cMid: { value: new THREE.Color(TOD.sky[1]) }, cHigh: { value: new THREE.Color(TOD.sky[2]) },
       },
       vertexShader: 'varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
       fragmentShader:
@@ -511,7 +547,7 @@
   /* =========================================================================
      RIVER  — stylized cel water shader (broad masses, amber sun band, foam)
      ========================================================================= */
-  const riverUniforms = { uTime: { value: 0 }, uSun: { value: new THREE.Color(COL.amberHi) } };
+  const riverUniforms = { uTime: { value: 0 }, uSun: { value: new THREE.Color(TOD.river) } };
   (function river() {
     const g = new THREE.PlaneGeometry(200, 15, 120, 24);
     g.rotateX(-Math.PI / 2);
@@ -1081,10 +1117,10 @@
     const tex = new THREE.CanvasTexture(c);
     // [z, y, height, width, colour, opacity]
     const layers = [
-      [-31, 0.3, 7.0, 160, 0xe0925a, 0.52],   // warm haze hugging the far bank
-      [-23, 0.1, 5.4, 150, 0xc07c58, 0.40],
-      [-13, 0.0, 3.8, 140, 0x74849f, 0.30],   // cool mid-river mist
-      [-4, -0.1, 2.6, 130, 0x4a5c85, 0.22],
+      [-31, 0.3, 7.0, 160, TOD.mist[0], 0.52 * TOD.mistI],   // haze hugging the far bank
+      [-23, 0.1, 5.4, 150, TOD.mist[1], 0.40 * TOD.mistI],
+      [-13, 0.0, 3.8, 140, TOD.mist[2], 0.30 * TOD.mistI],   // mid-river mist
+      [-4, -0.1, 2.6, 130, TOD.mist[3], 0.22 * TOD.mistI],
     ];
     for (const L of layers) {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(L[3], L[2]),

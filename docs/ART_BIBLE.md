@@ -50,7 +50,10 @@ masses defined by color).
 - Lighting identity: cool shadow world + one low warm sun (rim + cliff glow) + brief
   **orange muzzle flashes** punching warm light into the blue.
 - Two canonical times of day exist in the references: **dusk** (orange) and **moonlit
-  night** (silver). Both are valid; the shootout can be either.
+  night** (silver). Both are implemented as swappable presets (`TOD_PRESETS` in
+  `canyon.js`) covering key light, fills, fog, sky ramp, river reflection colour, mist
+  layers, bloom and the grade's duotone. Open `canyon.html?night` for the night look;
+  dusk is the default. Add future scenes by reusing the same two presets.
 
 ## Cast (from references)
 - **Jody Jones** — blond shoulder-length hair, stubble, blue eyes, **olive fringed poncho
