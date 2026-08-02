@@ -1435,15 +1435,15 @@
       else if (roll < 0.62) NearMiss.trigger();
     }
     function raycastHit(ray) {
-      let best = null, bd = 1e9;
+      let best = null, bd = 1e9, bp = null;
       for (const o of list) {
         if (!o.userData.alive || o.userData.up < 0.4) continue;
         const box = new THREE.Box3().setFromCenterAndSize(
           new THREE.Vector3(o.position.x, o.position.y + 1.15, o.position.z), new THREE.Vector3(1.0, 2.1, 0.7));
         const hit = ray.ray.intersectBox(box, new THREE.Vector3());
-        if (hit) { const d = hit.distanceTo(ray.ray.origin); if (d < bd) { bd = d; best = o; } }
+        if (hit) { const d = hit.distanceTo(ray.ray.origin); if (d < bd) { bd = d; best = o; bp = hit; } }
       }
-      return best;
+      return best ? { o: best, point: bp } : null;
     }
     function down(o) {
       const u = o.userData;
@@ -1671,6 +1671,28 @@
     return { spawn, update };
   })();
 
+  // A quick bright streak from muzzle to impact point, so a shot always shows
+  // where it went — hit, miss on rock, or splash — not just when it lands on a body.
+  const Tracer = (function () {
+    const items = [];
+    function spawn(from, to) {
+      const geo = new THREE.BufferGeometry().setFromPoints([from, to]);
+      const mat = new THREE.LineBasicMaterial({ color: 0xfff0c4, transparent: true, opacity: 0.95, depthWrite: false, fog: false });
+      const line = new THREE.Line(geo, mat);
+      line.renderOrder = 6;
+      scene.add(line);
+      items.push({ line, age: 0, life: 0.085 });
+    }
+    function update(dt) {
+      for (let i = items.length - 1; i >= 0; i--) {
+        const it = items[i]; it.age += dt;
+        it.line.material.opacity = Math.max(0, 0.95 * (1 - it.age / it.life));
+        if (it.age >= it.life) { scene.remove(it.line); it.line.geometry.dispose(); it.line.material.dispose(); items.splice(i, 1); }
+      }
+    }
+    return { spawn, update };
+  })();
+
   /* =========================================================================
      AUDIO  — procedural river, wind, revolver echo, Sharps, splashes, chips
      ========================================================================= */
@@ -1850,24 +1872,35 @@
     if (ammo <= 0) { Audio.dry(); dom.reloadTag.classList.add('show'); return; }
     ammo--; updateRounds();
     Colt.fireFX(); Jody.fireFX(); Audio.colt();
-    (function muzzleSmoke() {
-      const d = new THREE.Vector3(); camera.getWorldDirection(d);
-      const o = camera.position.clone().addScaledVector(d, 1.5).add(new THREE.Vector3(0.25, -0.25, 0));
-      Puffs.spawn(o.x, o.y, o.z, 0x93a2bd, 3);
-    })();
+    const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
+    const muzzle = camera.position.clone().addScaledVector(dir, 1.5).add(new THREE.Vector3(0.25, -0.25, 0));
+    Puffs.spawn(muzzle.x, muzzle.y, muzzle.z, 0x93a2bd, 3);
     shake += 0.18; tremor.set(rnd(-0.02, 0.02), rnd(-0.02, 0.02));
     // ray from camera center — exactly what the reticle marks, hip-fire or ADS alike
     const ray = new THREE.Raycaster();
     ray.setFromCamera(new THREE.Vector2(0, 0), camera);
     const hit = Enemies.raycastHit(ray);
     if (hit) {
-      Enemies.down(hit);
+      Enemies.down(hit.o);
       kills++; updateHostilesUI(); showHitmarker();
+      Tracer.spawn(muzzle, hit.point);
     } else {
-      // splash if the shot lands in the river band
-      const t = -ray.ray.origin.y / ray.ray.direction.y;
-      if (t > 0) { const px = ray.ray.origin.x + ray.ray.direction.x * t, pz = ray.ray.origin.z + ray.ray.direction.z * t;
-        if (pz < 3 && pz > -7 && Math.abs(px) < 168) Splashes.spawn(px, pz); }
+      // where the shot actually landed — a chip on the rock it hit, or a splash if
+      // nothing solid was in the way and it reaches the river — so a miss reads as
+      // a miss instead of vanishing into nothing.
+      const envHit = ray.intersectObject(world, true)[0];
+      let landed = null;
+      if (envHit) {
+        Puffs.spawn(envHit.point.x, envHit.point.y, envHit.point.z, 0x9a8a72, 3);
+        Audio.chip(false);
+        landed = envHit.point;
+      } else {
+        const t = -ray.ray.origin.y / ray.ray.direction.y;
+        if (t > 0) { const px = ray.ray.origin.x + ray.ray.direction.x * t, pz = ray.ray.origin.z + ray.ray.direction.z * t;
+          if (pz < 3 && pz > -7 && Math.abs(px) < 168) { Splashes.spawn(px, pz); landed = new THREE.Vector3(px, 0.15, pz); }
+        }
+      }
+      Tracer.spawn(muzzle, landed || muzzle.clone().addScaledVector(dir, 80));
     }
     if (ammo === 0) dom.reloadTag.classList.add('show');
   }
@@ -2049,7 +2082,7 @@
       Enemies.update(dt);
       Crow.update(dt);
     }
-    Puffs.update(dt); Splashes.update(dt);
+    Puffs.update(dt); Splashes.update(dt); Tracer.update(dt);
 
     // reeds sway
     for (const r of reeds) { r.rotation.z = Math.sin(clock * 1.6 + r.userData.phase) * 0.18; }
