@@ -13,6 +13,9 @@
     stage: $('stage'), loading: $('loading'), title: $('title'), startBtn: $('startBtn'),
     hud: $('hud'), rounds: $('rounds'), reloadTag: $('reloadTag'), nerveFill: $('nerveFill'),
     hitflash: $('hitflash'), steerHint: $('steerHint'),
+    healthFill: $('healthFill'), hostilesNum: $('hostilesNum'), hostilesTotal: $('hostilesTotal'),
+    hitmarker: $('hitmarker'), dmgDir: $('dmgDir'),
+    deathScreen: $('deathScreen'), retryBtn: $('retryBtn'),
   };
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
   const lerp = (a, b, t) => a + (b - a) * t;
@@ -1154,35 +1157,48 @@
     flash.position.set(0, 0.035, -0.74); grp.add(flash);
     const flashPt = new THREE.PointLight(0xffa040, 0, 4.0); flashPt.position.set(0, 0.12, -0.6); flashPt.visible = false; flashLights.push(flashPt); grp.add(flashPt);
 
-    grp.position.set(0.385, -0.235, -0.70);
-    grp.rotation.y = 0.80; grp.rotation.z = -0.06; grp.rotation.x = 0.56;
+    // Resting pose: close to camera-forward so the barrel actually crosses the crosshair
+    // (it was yawed ~46° across the frame — stylish per the reference photo, but it broke
+    // the player's intuition that "where the gun points" = "where the shot lands," since
+    // the hitscan is always exactly screen-center regardless of how the viewmodel is posed).
+    grp.position.set(0.30, -0.22, -0.66);
+    grp.rotation.set(0.10, 0.16, -0.04);
     grp.scale.setScalar(0.88);
     const kicker = new THREE.PointLight(0xffc98a, 0.55, 3.0, 1.2);
     kicker.position.set(-0.55, 0.75, -0.35); camera.add(kicker);
     camera.add(grp); scene.add(camera);
 
-    let recoil = 0, flashT = 0, sway = new THREE.Vector2(), bob = 0;
+    let recoil = 0, flashT = 0, sway = new THREE.Vector2(), bob = 0, adsBlend = 0, adsTarget = 0;
     const homePos = grp.position.clone();
+    const homeRot = grp.rotation.clone();
+    // Aim-down-sights pose: nearly dead-straight, pulled toward screen centre.
+    const adsPos = new THREE.Vector3(0.045, -0.145, -0.50);
+    const adsRot = new THREE.Vector3(0.02, 0.0, 0.0);
     return {
       group: grp, kicker,
       fireFX() { recoil = 1; flashT = 1; flash.material.rotation = rnd(0, 6.28); flashPt.intensity = 6; },
+      setADS(on) { adsTarget = on ? 1 : 0; },
+      getADS() { return adsBlend; },
       update(dt, lookVel, moving) {
         recoil = lerp(recoil, 0, dt * 10);
         flashT = Math.max(0, flashT - dt * 6);
         flash.material.opacity = flashT;
         flash.scale.setScalar(1 + (1 - flashT) * 0.6);
         flashPt.intensity = flashT * 6;
-        // sway from look, gentle idle bob
+        adsBlend = lerp(adsBlend, adsTarget, dt * 9);
+        // sway from look, gentle idle bob — both damped while aiming down sights
+        const swayDamp = 1 - adsBlend * 0.75;
         bob += dt * 1.2;
-        sway.x = lerp(sway.x, clamp(-lookVel.x * 0.02, -0.05, 0.05), dt * 6);
-        sway.y = lerp(sway.y, clamp(lookVel.y * 0.02, -0.05, 0.05), dt * 6);
-        grp.position.x = homePos.x + sway.x + Math.sin(bob) * 0.006;
-        grp.position.y = homePos.y + sway.y + Math.cos(bob * 0.9) * 0.006 - recoil * 0.05;
-        grp.position.z = homePos.z + recoil * 0.14;
-        grp.rotation.x = -recoil * 0.5 + tremor.x;
-        grp.rotation.z = tremor.y;
+        sway.x = lerp(sway.x, clamp(-lookVel.x * 0.02, -0.05, 0.05) * swayDamp, dt * 6);
+        sway.y = lerp(sway.y, clamp(lookVel.y * 0.02, -0.05, 0.05) * swayDamp, dt * 6);
+        const px = lerp(homePos.x, adsPos.x, adsBlend), py = lerp(homePos.y, adsPos.y, adsBlend), pz = lerp(homePos.z, adsPos.z, adsBlend);
+        grp.position.x = px + sway.x + Math.sin(bob) * 0.006 * swayDamp;
+        grp.position.y = py + sway.y + Math.cos(bob * 0.9) * 0.006 * swayDamp - recoil * 0.05;
+        grp.position.z = pz + recoil * 0.14;
+        grp.rotation.y = lerp(homeRot.y, adsRot.y, adsBlend);
+        grp.rotation.x = lerp(homeRot.x, adsRot.x, adsBlend) - recoil * 0.5 + tremor.x;
+        grp.rotation.z = lerp(homeRot.z, adsRot.z, adsBlend) + tremor.y;
       },
-      setADS(on) { /* reserved */ },
     };
   })();
   const tremor = new THREE.Vector2();
@@ -1352,6 +1368,7 @@
       const o = makeOutlaw(s.color, s.scarf, seats.indexOf(s));
       o.position.set(s.x, s.y + s.hide, s.z);
       o.userData.seatY = s.y; o.userData.hideY = s.y + s.hide; o.userData.wake = s.wake;
+      o.userData.seatX = s.x; o.userData.seatZ = s.z;
       o.userData.state = 'down'; o.userData.t = rnd(1.5, 5); o.userData.up = 0;
       o.userData.alive = true;
       scene.add(o); list.push(o);
@@ -1365,8 +1382,18 @@
           o.rotation.y = Math.atan2(camera.position.x - o.position.x, camera.position.z - o.position.z);
           continue;
         }
-        if (!u.alive) { // sink and stay
-          u.up = lerp(u.up, 0, dt * 6); o.position.y = lerp(u.hideY, u.seatY, u.up); continue;
+        if (!u.alive) {
+          // Shot dead: knocked back and tips over, sinking faster than a casual duck
+          // back into cover — the "something happens when you hit them" read.
+          u.up = lerp(u.up, 0, dt * (u.hitDeath ? 10 : 6));
+          o.position.y = lerp(u.hideY, u.seatY, u.up);
+          if (u.hitDeath) {
+            u.kick = lerp(u.kick, 0, dt * 3.2);
+            o.position.x = u.seatX + u.kickDir.x * u.kick * 0.45;
+            o.position.z = u.seatZ + u.kickDir.z * u.kick * 0.45;
+            o.rotation.x = -u.kick * 0.55;
+          }
+          continue;
         }
         // pocket gating: sleep until the player advances past this pocket's wake line
         const engaged = player.pos.x >= u.wake && Math.abs(player.pos.x - o.position.x) < 75;
@@ -1400,8 +1427,12 @@
       o.userData.fpt.intensity = 3.4;
       Audio.enemyShot(o.position);
       Puffs.spawn(o.position.x - 0.85, o.position.y + 1.2, o.position.z + 0.35, 0x9aa7c0, 2);
-      // a near-miss on the player: chip the boulder + whistle + nerve hit
-      if (Math.random() < 0.6) NearMiss.trigger();
+      // Three outcomes, like a real gunfight: a genuine hit, a near-miss (chips cover,
+      // rattles nerve), or a clean miss with no effect. Grunts are hip-firing revolvers
+      // at range, so a confirmed hit is the least likely of the three.
+      const roll = Math.random();
+      if (roll < 0.22) takeDamage(rnd(8, 14), o.position);
+      else if (roll < 0.62) NearMiss.trigger();
     }
     function raycastHit(ray) {
       let best = null, bd = 1e9;
@@ -1415,10 +1446,24 @@
       return best;
     }
     function down(o) {
-      o.userData.alive = false; o.userData.state = 'dead';
-      Audio.hitBody(); Puffs.spawn(o.position.x, o.position.y + 0.7, o.position.z, 0x6a5540, 6);
+      const u = o.userData;
+      u.alive = false; u.state = 'dead'; u.hitDeath = true; u.kick = 1.0;
+      const kd = new THREE.Vector3(u.seatX - player.pos.x, 0, u.seatZ - player.pos.z);
+      u.kickDir = kd.lengthSq() > 1e-6 ? kd.normalize() : new THREE.Vector3(0, 0, 1);
+      Audio.hitBody();
+      Puffs.spawn(o.position.x, o.position.y + 0.7, o.position.z, 0x9a6a44, 9);   // bigger, warmer impact burst
     }
-    return { list, update, raycastHit, down };
+    // Revive everyone for a fresh run after the player dies and retries.
+    function resetAll() {
+      for (const o of list) {
+        const u = o.userData;
+        u.alive = true; u.hitDeath = false; u.kick = 0; u.fired = false;
+        u.state = 'down'; u.t = rnd(1.5, 5); u.up = 0;
+        o.position.set(u.seatX, u.hideY, u.seatZ);
+        o.rotation.set(0, 0, 0);
+      }
+    }
+    return { list, update, raycastHit, down, resetAll };
   })();
 
   /* ----- Harlan Crow — distant, still, the environmental threat ----------- */
@@ -1484,11 +1529,14 @@
     function boom() {
       glow.material.opacity = 1; pt.intensity = 14;
       Audio.sharps(g.position);
-      // a rock beside Jody explodes
-      NearMiss.trigger(true);
+      // A called-out sniper shot: rarer than a grunt's hip-fire but far more dangerous —
+      // Crow is "the environmental threat" per the brief, so a hit should feel severe.
+      if (Math.random() < 0.5) takeDamage(rnd(30, 42), g.position);
+      else NearMiss.trigger(true);   // a rock beside Jody explodes instead
       setTimeout(() => { pt.intensity = 0; glow.material.opacity = 0; }, 120);
     }
-    return { group: g, update };
+    function reset() { state = 'watch'; t = rnd(6, 10); charge = 0; glow.material.opacity = 0; pt.intensity = 0; }
+    return { group: g, update, reset };
   })();
 
   /* =========================================================================
@@ -1681,12 +1729,31 @@
     }
     return {
       resume() { ensure(); if (ctx.state === 'suspended') ctx.resume(); startBeds(); },
-      colt() { if (!ctx) return; shotNoise(0.5, 2600, 1.1, true); tone(180, 0.12, 'square', 0.5); tone(90, 0.2, 'sine', 0.4); },
-      enemyShot() { if (!ctx) return; shotNoise(0.4, 2000, 0.5, true); },
-      sharps() { if (!ctx) return; shotNoise(0.9, 1400, 1.4, true); tone(70, 0.4, 'sine', 0.7); tone(120, 0.2, 'square', 0.4); },
+      // A revolver crack has three layered parts: a bright transient click (the hammer
+      // strike/ignition), the loud noise body (the report), and a low thump (chest impact
+      // of the blast) — plus the canyon echo bus for slap-back down the corridor.
+      colt() { if (!ctx) return;
+        shotNoise(0.045, 6500, 1.0, false);
+        shotNoise(0.55, 2800, 1.35, true);
+        tone(150, 0.16, 'square', 0.55);
+        tone(58, 0.30, 'sine', 0.6);
+      },
+      enemyShot() { if (!ctx) return; shotNoise(0.035, 5000, 0.6, false); shotNoise(0.4, 2000, 0.55, true); },
+      sharps() { if (!ctx) return;
+        shotNoise(0.05, 5000, 1.25, false);
+        shotNoise(0.9, 1400, 1.5, true);
+        tone(55, 0.45, 'sine', 0.75);
+        tone(110, 0.22, 'square', 0.45);
+      },
       splash() { if (!ctx) return; shotNoise(0.18, 5000, 0.3, false); },
       chip(heavy) { if (!ctx) return; shotNoise(0.1, 7000, heavy ? 0.5 : 0.28, false); tone(rnd(1400, 2200), 0.08, 'sine', 0.12); },
       hitBody() { if (!ctx) return; shotNoise(0.12, 800, 0.4, false); },
+      // The player got hit — a heavier, duller thud than a body-kill, scaled up for
+      // Crow's Sharps rounds so the "environmental threat" reads as dangerous.
+      hitPlayer(heavy) { if (!ctx) return;
+        shotNoise(heavy ? 0.24 : 0.14, heavy ? 550 : 900, heavy ? 0.75 : 0.5, false);
+        tone(heavy ? 65 : 105, heavy ? 0.38 : 0.22, 'sine', heavy ? 0.55 : 0.35);
+      },
       dry() { if (!ctx) return; tone(1200, 0.03, 'square', 0.08); },
     };
   })();
@@ -1704,6 +1771,7 @@
     fov: 46,
   };
   const FPS_FOV = 58;   // freeze look at authored defaults for screenshots
+  const ADS_FOV = 46;   // narrower while aiming down sights — precision aiming convention
   const Q = new URLSearchParams(location.search);
   const SHOT_X = parseFloat(Q.get('px') || '-10'), SHOT_Z = parseFloat(Q.get('pz') || '9'), SHOT_YAW = parseFloat(Q.get('pyaw') || '0'), SHOT_PITCH = parseFloat(Q.get('ppitch') || '-0.155');
   const player = {
@@ -1711,7 +1779,9 @@
     steer: new THREE.Vector2(), lookVel: new THREE.Vector2(),
     pos: new THREE.Vector3(SHOT ? SHOT_X : -152, 0, SHOT ? SHOT_Z : 9),
     keys: {}, eye: 1.9, stepT: 0, moving: false,
+    health: 100, maxHealth: 100, alive: true, ads: false,
   };
+  const START_POS = player.pos.clone(), START_YAW = player.yaw, START_PITCH = player.pitch;
   const PITCH_LO = -0.45, PITCH_HI = 0.45;
   let ammo = 6, reloading = false, running = false;
   let nerve = 1, shake = 0;
@@ -1719,19 +1789,31 @@
   function onMove(e) {
     if (SHOT) return;
     if (player.locked) {
-      const s = 0.0022;
+      const s = (player.ads ? 0.55 : 1) * 0.0022;
       player.yaw -= e.movementX * s;
       player.pitch = clamp(player.pitch - e.movementY * s, PITCH_LO, PITCH_HI);
       player.lookVel.set(e.movementX, e.movementY);
     } else if (player.lockBlocked && running) {
+      // Steer-mode fallback (pointer lock unavailable — e.g. inside a sandboxed iframe):
+      // cursor position relative to screen centre drives a continuous turn rate, like a
+      // virtual look-stick. A small dead zone so the centre is calm; the response is
+      // curved (power >1) so small offsets near centre give fine control while the edges
+      // still reach a fast, usable turn rate — this was the "aim feels laggy" complaint.
       const nx = (e.clientX / innerWidth) * 2 - 1, ny = (e.clientY / innerHeight) * 2 - 1;
-      const dz = 0.1;
-      player.steer.x = Math.abs(nx) < dz ? 0 : (nx - Math.sign(nx) * dz) / (1 - dz);
-      player.steer.y = Math.abs(ny) < dz ? 0 : (ny - Math.sign(ny) * dz) / (1 - dz);
+      const dz = 0.035;
+      const rx = Math.abs(nx) < dz ? 0 : (nx - Math.sign(nx) * dz) / (1 - dz);
+      const ry = Math.abs(ny) < dz ? 0 : (ny - Math.sign(ny) * dz) / (1 - dz);
+      player.steer.x = Math.sign(rx) * Math.pow(Math.abs(rx), 1.6);
+      player.steer.y = Math.sign(ry) * Math.pow(Math.abs(ry), 1.6);
     }
   }
   document.addEventListener('mousemove', onMove);
-  document.addEventListener('mousedown', (e) => { if (!running) return; if (e.button === 0) { fire(); if (!player.locked && !player.lockBlocked) requestLock(); } });
+  document.addEventListener('mousedown', (e) => {
+    if (!running) return;
+    if (e.button === 0) { fire(); if (!player.locked && !player.lockBlocked) requestLock(); }
+    if (e.button === 2 && player.alive) { player.ads = true; Colt.setADS(true); }
+  });
+  document.addEventListener('mouseup', (e) => { if (e.button === 2) { player.ads = false; Colt.setADS(false); } });
   document.addEventListener('contextmenu', (e) => e.preventDefault());
   document.addEventListener('keydown', (e) => {
     player.keys[e.code] = true;
@@ -1756,8 +1838,14 @@
     if (player.locked) player.lockBlocked = false;
   });
 
+  let kills = 0;
+  function updateHostilesUI() { dom.hostilesNum.textContent = kills; }
+  function showHitmarker() {
+    dom.hitmarker.classList.remove('show'); void dom.hitmarker.offsetWidth; // restart the CSS animation
+    dom.hitmarker.classList.add('show');
+  }
   function fire() {
-    if (!running || reloading) return;
+    if (!running || reloading || !player.alive) return;
     if (ammo <= 0) { Audio.dry(); dom.reloadTag.classList.add('show'); return; }
     ammo--; updateRounds();
     Colt.fireFX(); Jody.fireFX(); Audio.colt();
@@ -1767,12 +1855,14 @@
       Puffs.spawn(o.x, o.y, o.z, 0x93a2bd, 3);
     })();
     shake += 0.18; tremor.set(rnd(-0.02, 0.02), rnd(-0.02, 0.02));
-    // ray from camera center
+    // ray from camera center — exactly what the reticle marks, hip-fire or ADS alike
     const ray = new THREE.Raycaster();
     ray.setFromCamera(new THREE.Vector2(0, 0), camera);
     const hit = Enemies.raycastHit(ray);
-    if (hit) Enemies.down(hit);
-    else {
+    if (hit) {
+      Enemies.down(hit);
+      kills++; updateHostilesUI(); showHitmarker();
+    } else {
       // splash if the shot lands in the river band
       const t = -ray.ray.origin.y / ray.ray.direction.y;
       if (t > 0) { const px = ray.ray.origin.x + ray.ray.direction.x * t, pz = ray.ray.origin.z + ray.ray.direction.z * t;
@@ -1795,6 +1885,54 @@
   (function buildRounds() {
     for (let i = 0; i < 6; i++) { const s = document.createElement('span'); s.className = 'r'; dom.rounds.insertBefore(s, dom.rounds.firstChild); }
   })();
+
+  /* =========================================================================
+     PLAYER DAMAGE — real hits from enemy fire. Standard FPS conventions:
+     a health bar that actually depletes, a compass arrow toward the shooter,
+     a bigger screen-damage flash than a mere near-miss, and a death/retry screen
+     instead of the player being unkillable.
+     ========================================================================= */
+  function updateHealthUI() { dom.healthFill.style.transform = 'scaleX(' + clamp(player.health / player.maxHealth, 0, 1) + ')'; }
+  let dmgDirTimer = null;
+  function showDamageDirection(sourcePos) {
+    const dx = sourcePos.x - player.pos.x, dz = sourcePos.z - player.pos.z;
+    const worldAngle = Math.atan2(-dx, -dz);           // matches the forward-vector convention used for movement
+    let rel = worldAngle - player.yaw;
+    rel = Math.atan2(Math.sin(rel), Math.cos(rel));    // normalize to [-PI, PI]
+    dom.dmgDir.style.transform = 'rotate(' + (rel * 180 / Math.PI) + 'deg)';
+    dom.dmgDir.classList.add('show');
+    clearTimeout(dmgDirTimer);
+    dmgDirTimer = setTimeout(() => dom.dmgDir.classList.remove('show'), 700);
+  }
+  function takeDamage(amount, sourcePos) {
+    if (!player.alive) return;
+    player.health = clamp(player.health - amount, 0, player.maxHealth);
+    updateHealthUI();
+    flashHit(clamp(0.4 + amount / 55, 0.4, 1.0));
+    shake += 0.22 + amount * 0.012;
+    nerve = clamp(nerve - amount * 0.009, 0.08, 1);
+    if (sourcePos) showDamageDirection(sourcePos);
+    Audio.hitPlayer(amount >= 25);
+    if (player.health <= 0) killPlayer();
+  }
+  function killPlayer() {
+    player.alive = false;
+    document.body.classList.remove('aiming');
+    dom.deathScreen.classList.remove('hidden');
+    if (document.exitPointerLock) document.exitPointerLock();
+  }
+  function restartRun() {
+    player.pos.copy(START_POS); player.yaw = START_YAW; player.pitch = START_PITCH;
+    player.health = player.maxHealth; player.alive = true; player.ads = false;
+    ammo = 6; reloading = false; updateRounds(); dom.reloadTag.classList.remove('show');
+    nerve = 1; shake = 0; kills = 0; updateHostilesUI();
+    Enemies.resetAll(); Crow.reset();
+    tick._ended = false;
+    updateHealthUI();
+    dom.deathScreen.classList.add('hidden');
+    document.body.classList.add('aiming');
+    requestLock();
+  }
 
   function flashHit(a) {
     dom.hitflash.style.transition = 'none';
@@ -1834,15 +1972,17 @@
     RIM.dir.copy(sun.position).sub(sun.target.position).normalize();
     for (let i = 0; i < flashLights.length; i++) flashLights[i].visible = flashLights[i].intensity > 0.05;
 
-    // steer look
+    // steer look — much higher rate than before (was 1.4/1.0 rad/s, felt sluggish and
+    // capped); ADS still slows it down for precision, matching the pointer-lock path.
     if (!SHOT && player.lockBlocked && (player.steer.x || player.steer.y)) {
-      player.yaw -= player.steer.x * 1.4 * dt;
-      player.pitch = clamp(player.pitch - player.steer.y * 1.0 * dt, PITCH_LO, PITCH_HI);
+      const steerMul = player.ads ? 0.55 : 1;
+      player.yaw -= player.steer.x * 2.6 * steerMul * dt;
+      player.pitch = clamp(player.pitch - player.steer.y * 2.0 * steerMul * dt, PITCH_LO, PITCH_HI);
       player.lookVel.set(player.steer.x * 40, player.steer.y * 40);
     }
 
     // --- TRAVERSAL MOVEMENT: walk the run, west to east ---
-    if (running && !SHOT) {
+    if (running && !SHOT && player.alive) {
       let ix = 0, iz = 0;
       if (player.keys['KeyW']) iz += 1; if (player.keys['KeyS']) iz -= 1;
       if (player.keys['KeyA']) ix -= 1; if (player.keys['KeyD']) ix += 1;
@@ -1896,11 +2036,13 @@
       camera.position.set(player.pos.x, player.eye + bob, player.pos.z);
       camera.rotation.y = player.yaw + sx + Math.sin(clock * 7) * trem;
       camera.rotation.x = player.pitch + sy + breathe + Math.cos(clock * 6) * trem;
-      if (camera.fov !== FPS_FOV) { camera.fov = FPS_FOV; camera.updateProjectionMatrix(); }
+      const targetFov = SHOT ? FPS_FOV : (player.ads ? ADS_FOV : FPS_FOV);
+      const newFov = SHOT ? targetFov : lerp(camera.fov, targetFov, dt * 9);
+      if (Math.abs(camera.fov - newFov) > 0.01) { camera.fov = newFov; camera.updateProjectionMatrix(); }
     }
     player.lookVel.multiplyScalar(0.85);
 
-    if (running) {
+    if (running && (player.alive || SHOT)) {
       Colt.update(dt, player.lookVel, false);
       Jody.update(dt);
       Enemies.update(dt);
@@ -1949,12 +2091,19 @@
     dom.title.classList.add('hidden');
     dom.hud.classList.remove('hidden');
     document.body.classList.add('aiming');
+    dom.hostilesTotal.textContent = Enemies.list.length;
+    updateHostilesUI(); updateHealthUI();
     running = true;
     requestLock();
   });
+  dom.retryBtn.addEventListener('click', () => { Audio.resume(); restartRun(); });
 
   // debug hook for headless smoke tests
   window.__dbg = { yaw: () => player.yaw, pitch: () => player.pitch, ammo: () => ammo, puffs: () => Puffs.count(), enemies: () => Enemies.list.length };
+  window.__health = () => [+player.health.toFixed(1), player.alive];
+  window.__takeDamage = (amt, pos) => takeDamage(amt, pos || player.pos.clone());
+  window.__kills = () => kills;
+  window.__ads = (on) => { player.ads = !!on; Colt.setADS(!!on); };
   window.__fire = () => fire();
   window.__pos = () => [+player.pos.x.toFixed(1), +player.pos.z.toFixed(1)];
   window.__setPos = (x, z, yaw) => { player.pos.x = x; player.pos.z = z; if (yaw != null) player.yaw = yaw; };

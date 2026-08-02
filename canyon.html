@@ -47,12 +47,43 @@
     text-transform:uppercase; color:var(--amber-hi); text-shadow:0 1px 4px #000; opacity:0; transition:opacity .2s; }
   #reloadTag.show { opacity:1; }
 
-  /* "Nerve" (steadiness/health) bar — hand tremor rises as you take fire */
+  /* "Nerve" — steadiness; drops on near-misses and causes aim/camera shake */
   #nerve { position:absolute; right:26px; bottom:9vh; width:190px; text-align:right; }
   #nerve .label { font-size:12px; letter-spacing:.22em; text-transform:uppercase; color:var(--paper-dim); margin-bottom:5px; }
   #nerve .track { height:6px; background:rgba(10,16,36,.65); border:1px solid rgba(233,220,195,.18); border-radius:3px; overflow:hidden; }
   #nerve .fill { height:100%; width:100%; transform-origin:right center;
     background:linear-gradient(90deg, #b23b2e, var(--amber), var(--amber-hi)); transition:transform .25s ease; }
+
+  /* Health — real damage from confirmed hits; sits above Nerve */
+  #health { position:absolute; right:26px; bottom:calc(9vh + 30px); width:190px; text-align:right; }
+  #health .label { font-size:12px; letter-spacing:.22em; text-transform:uppercase; color:var(--paper-dim); margin-bottom:5px; }
+  #health .track { height:7px; background:rgba(10,16,36,.65); border:1px solid rgba(233,220,195,.18); border-radius:3px; overflow:hidden; }
+  #health .fill { height:100%; width:100%; transform-origin:right center;
+    background:linear-gradient(90deg, #6e1a14, #b23b2e, #e0714a); transition:transform .3s ease; }
+
+  /* Hostiles counter — pairs with the Colt rounds, bottom-left */
+  #hostiles { position:absolute; left:26px; bottom:calc(9vh + 26px); font-size:12px; letter-spacing:.22em;
+    text-transform:uppercase; color:var(--paper-dim); }
+  #hostiles b { color:var(--amber-hi); font-weight:600; }
+
+  /* Hit marker — confirms a shot connected */
+  #hitmarker { position:absolute; left:50%; top:50%; width:26px; height:26px; transform:translate(-50%,-50%);
+    z-index:19; pointer-events:none; opacity:0; }
+  #hitmarker svg { width:100%; height:100%; }
+  #hitmarker.show { animation:hitpop .3s ease-out; }
+  @keyframes hitpop {
+    0% { opacity:1; transform:translate(-50%,-50%) scale(.6); }
+    30% { opacity:1; transform:translate(-50%,-50%) scale(1.18); }
+    100% { opacity:0; transform:translate(-50%,-50%) scale(1); }
+  }
+
+  /* Damage direction — a compass arrow toward whoever just hit you */
+  #dmgDir { position:fixed; left:50%; top:50%; width:0; height:0; z-index:16; pointer-events:none;
+    opacity:0; transition:opacity .6s ease; }
+  #dmgDir.show { opacity:1; transition:none; }
+  #dmgDir .arrow { position:absolute; left:50%; top:50%; transform:translate(-50%,-44vmin);
+    width:0; height:0; border-left:13px solid transparent; border-right:13px solid transparent;
+    border-bottom:24px solid rgba(217,90,60,.92); filter:drop-shadow(0 0 8px rgba(217,90,60,.7)); }
 
   /* Reticle — a hand-drawn iron-sight notch, not a video-game crosshair */
   #sight { position:absolute; left:50%; top:50%; width:34px; height:34px; transform:translate(-50%,-50%);
@@ -96,6 +127,11 @@
   .steerHint { position:absolute; left:50%; bottom:8vh; transform:translateX(-50%); z-index:18; padding:7px 15px;
     font-size:12px; letter-spacing:.1em; color:var(--paper); background:rgba(6,10,20,.72);
     border:1px solid rgba(224,138,46,.4); border-radius:2px; white-space:nowrap; pointer-events:none; text-transform:uppercase; }
+
+  /* Death screen — reuses the title card's type treatment, tinted for danger */
+  #deathScreen { position:fixed; inset:0; z-index:32; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; background:radial-gradient(120% 100% at 50% 40%, rgba(96,20,14,.4), rgba(4,3,6,.94)); }
+  #deathScreen.hidden { opacity:0; visibility:hidden; transition:opacity .8s ease, visibility .8s; }
 </style>
 </head>
 <body>
@@ -118,7 +154,15 @@
   <div id="hud" class="hidden">
     <div id="reloadTag">Reload — R</div>
     <div id="rounds"><span class="label">Colt</span></div>
+    <div id="hostiles">Hostiles Down <b id="hostilesNum">0</b> / <span id="hostilesTotal">0</span></div>
+    <div id="health"><div class="label">Health</div><div class="track"><div class="fill" id="healthFill"></div></div></div>
     <div id="nerve"><div class="label">Nerve</div><div class="track"><div class="fill" id="nerveFill"></div></div></div>
+    <div id="hitmarker">
+      <svg viewBox="0 0 26 26" fill="none">
+        <path d="M5 5 L21 21 M21 5 L5 21" stroke="#f4b451" stroke-width="2.6" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div id="dmgDir"><div class="arrow"></div></div>
     <div id="steerHint" class="steerHint hidden">Move cursor to the screen edges to look · click to fire</div>
   </div>
 
@@ -130,7 +174,16 @@
     <div class="rule"></div>
     <div class="flavor">The canyon runs east, and so must you — cover to cover along the river, across two fords, and through the Narrows where Harlan Crow waits with his Sharps. The sun's already left the canyon floor. Make your shots count.</div>
     <div class="start"><button id="startBtn" class="btn">Take Cover</button></div>
-    <div class="controls"><b>WASD</b> move &nbsp;·&nbsp; <b>Mouse</b> aim &nbsp;·&nbsp; <b>Click</b> fire &nbsp;·&nbsp; <b>R</b> reload &nbsp;·&nbsp; <b>C</b> cinematic</div>
+    <div class="controls"><b>WASD</b> move &nbsp;·&nbsp; <b>Mouse</b> aim &nbsp;·&nbsp; <b>Click</b> fire &nbsp;·&nbsp;
+      <b>Right-click</b> aim down sights &nbsp;·&nbsp; <b>R</b> reload &nbsp;·&nbsp; <b>C</b> cinematic</div>
+  </div>
+
+  <div id="deathScreen" class="hidden">
+    <div class="eyebrow">The Canyon Goes Quiet</div>
+    <div class="wordmark">You're Hit Bad</div>
+    <div class="rule"></div>
+    <div class="flavor">Jody goes down behind the rocks. Somewhere across the water, a hammer cocks back.</div>
+    <div class="start"><button id="retryBtn" class="btn">Try Again</button></div>
   </div>
 
   <script src="vendor/three.min.js"></script>
