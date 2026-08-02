@@ -49,7 +49,7 @@
      ========================================================================= */
   const TOD_PRESETS = {
     dusk: {
-      key: 0xffc287, keyIntensity: 1.95, keyPos: [-46, 92, 40],
+      key: 0xffc287, keyIntensity: 1.72, keyPos: [-46, 92, 40],
       skyFill: 0x41608f, ground: 0x0e1728, hemi: 0.78,
       ambient: 0x22355e, ambientI: 0.46,
       fill: 0x5a7dc0, fillI: 0.34, bounce: 0x2c4a76, bounceI: 0.22,
@@ -58,7 +58,7 @@
       river: 0xf0993e, rockTint: 0xffffff, rim: 0xff9c4a, rimStrength: 1.15, waterDeep: 0x0c1424, waterLit: 0x142038,
       grade: { shadow: 0x1b2a4e, light: 0xffd7a2, tint: 0.34, sat: 1.24 },
       mist: [0x7a5a4c, 0x5f4a48, 0x47536e, 0x333f5c], mistI: 1.0,
-      bloom: 0.35,
+      bloom: 0.22,
     },
     night: {
       // Moonlight: a cold, hard key. Everything reads midnight navy except the
@@ -681,7 +681,8 @@
   /* =========================================================================
      RIVER  — stylized cel water shader (broad masses, amber sun band, foam)
      ========================================================================= */
-  const riverUniforms = { uTime: { value: 0 }, uSun: { value: new THREE.Color(TOD.river) },
+  let riverMat = null;
+  const riverUniforms = { uTime: { value: 0 }, uSun: { value: new THREE.Color(TOD.river) }, uCamX: { value: 0 },
     uDeep: { value: new THREE.Color(TOD.waterDeep || 0x0c1424) }, uLit: { value: new THREE.Color(TOD.waterLit || 0x142038) } };
   (function river() {
     const g = new THREE.PlaneGeometry(360, 15, 200, 24);
@@ -698,7 +699,7 @@
         '  #include <fog_vertex>\n' +
         '}',
       fragmentShader:
-        'uniform float uTime; uniform vec3 uSun; uniform vec3 uDeep; uniform vec3 uLit; varying vec2 vP; varying float vWave;\n' +
+        'uniform float uTime; uniform float uCamX; uniform vec3 uSun; uniform vec3 uDeep; uniform vec3 uLit; varying vec2 vP; varying float vWave;\n' +
         '#include <fog_pars_fragment>\n' +
         'float hash(vec2 p){ return fract(sin(dot(p, vec2(41.3,289.1)))*43758.5453); }\n' +
         'float vnoise(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);\n' +
@@ -714,8 +715,9 @@
         '  float f = fbm(vP*vec2(2.3,4.0) - flow*2.2);\n' +
         '  float caps = smoothstep(0.60,0.82,f);\n' +
         '  // SIGNATURE: a defined reflection streak running toward the viewer\n' +
-        '  float streakX = sin(vP.y*0.30 + 0.6)*1.5 + sin(vP.y*0.85)*0.5;\n' +
-        '  float streak = pow(smoothstep(2.3, 0.0, abs(vP.x - streakX)), 1.5);\n' +
+        '  float wob = sin(vP.y*0.30 + 0.6)*1.5 + sin(vP.y*0.85)*0.5;\n' +
+        '  float dStreak = abs(vP.x - uCamX + wob);\n' +
+        '  float streak = pow(smoothstep(5.0, 0.0, dStreak), 1.3);\n' +
         '  // amber reflection — deliberately capped below clipping so it never blows to white\n' +
         '  vec3 sunCol = uSun * 0.82;\n' +
         '  col = mix(col, sunCol, streak*0.92);\n' +
@@ -729,6 +731,7 @@
         '  #include <fog_fragment>\n' +
         '}',
     });
+    riverMat = mat;
     const mesh = new THREE.Mesh(g, mat);
     mesh.position.set(0, 0.02, -1.5);  // spans between the banks
     scene.add(mesh);
@@ -761,7 +764,7 @@
   }
   // Near bank (player side) — cool wet gravel; Far bank (enemies) — sandstone shelves.
   bank(7.8, 2.6, COL.rockShadow, 0.0);   // just the near water's edge
-  bank(-12, 12, 0x543d26, 0.2);
+  bank(-12, 12, 0x46321e, 0.2);
 
   // Far-bank elevated shelves (give gunslingers different heights)
   // Organic ledge: a displaced, squashed dome — the box slabs read as straight
@@ -786,9 +789,9 @@
     ink(m, 0.0035); shad(m); world.add(m); return m;
   }
   // Low far-bank rises the outlaws stand on — NOT tall blocks (the walls are the height).
-  shelf(-113, -12.5, 14, 7, 0.8, 0x4f3a24);
-  shelf(-8, -13.5, 16, 8, 1.3, 0x5d3320);
-  shelf(126, -12.8, 13, 7, 1.0, 0x4f3a24);
+  shelf(-113, -12.5, 14, 7, 0.8, 0x422f1c);
+  shelf(-8, -13.5, 16, 8, 1.3, 0x4d2b18);
+  shelf(126, -12.8, 13, 7, 1.0, 0x422f1c);
   shelf(63, -14, 13, 7, 4.6, 0x5d3320);   // Crow's overwatch ledge above the Narrows
 
   // Scatter cover rocks along both banks + in the river.
@@ -870,7 +873,7 @@
   (function bankRubble() {
     for (let i = 0; i < 70; i++) {
       const rr = rnd(0.30, 0.95);
-      const m = makeRock(rr, toon(new THREE.Color(i % 3 === 0 ? 0x7d4527 : 0x8f5330).multiply(new THREE.Color(TOD.rockTint)).getHex(), { flatShading: true }), { squashY: 0.55 });
+      const m = makeRock(rr, toon(new THREE.Color(i % 3 === 0 ? 0x663a20 : 0x764425).multiply(new THREE.Color(TOD.rockTint)).getHex(), { flatShading: true }), { squashY: 0.55 });
       m.position.set(rnd(-155, 155), rnd(0.05, 0.35), rnd(-8.4, -6.2));
       m.rotation.y = rnd(0, 6.28);
       world.add(m);
@@ -878,7 +881,7 @@
     // a few larger blocks sitting proud of the bank edge
     for (let i = 0; i < 20; i++) {
       const rr = rnd(0.9, 1.7);
-      const m = makeRock(rr, toon(new THREE.Color(0x8a4d2c).multiply(new THREE.Color(TOD.rockTint)).getHex(), { flatShading: true }), { squashY: 0.7 });
+      const m = makeRock(rr, toon(new THREE.Color(0x734022).multiply(new THREE.Color(TOD.rockTint)).getHex(), { flatShading: true }), { squashY: 0.7 });
       m.position.set(rnd(-152, 152), rnd(0.3, 0.9), rnd(-10.5, -8.5));
       m.rotation.y = rnd(0, 6.28);
       world.add(m);
@@ -1324,7 +1327,7 @@
     // muzzle flash at the barrel tip
     const flash = new THREE.Mesh(new THREE.PlaneGeometry(0.95, 0.95), new THREE.MeshBasicMaterial({ map: TEX.flash, color: 0xffd9a0, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
     flash.position.set(-0.76, 1.20, 0.34); g.add(flash);
-    const fpt = new THREE.PointLight(0xffa848, 0, 13.0); fpt.position.set(-0.92, 1.22, 0.46); fpt.visible = false; flashLights.push(fpt); g.add(fpt);
+    const fpt = new THREE.PointLight(0xffa848, 0, 9.0); fpt.position.set(-0.92, 1.22, 0.46); fpt.visible = false; flashLights.push(fpt); g.add(fpt);
     g.userData = { flash, fpt, rifle };
     shad(g);
     return g;
@@ -1389,12 +1392,12 @@
         o.rotation.y = Math.atan2(camera.position.x - o.position.x, camera.position.z - o.position.z);
         // flash decay
         const f = o.userData.flash;
-        if (f.material.opacity > 0) { f.material.opacity = Math.max(0, f.material.opacity - dt * 5); o.userData.fpt.intensity = f.material.opacity * 8.0; }
+        if (f.material.opacity > 0) { f.material.opacity = Math.max(0, f.material.opacity - dt * 5); o.userData.fpt.intensity = f.material.opacity * 3.4; }
       }
     }
     function fire(o) {
       o.userData.flash.material.opacity = 1; o.userData.flash.material.rotation = rnd(0, 6.28);
-      o.userData.fpt.intensity = 8.0;
+      o.userData.fpt.intensity = 3.4;
       Audio.enemyShot(o.position);
       Puffs.spawn(o.position.x - 0.85, o.position.y + 1.2, o.position.z + 0.35, 0x9aa7c0, 2);
       // a near-miss on the player: chip the boulder + whistle + nerve hit
@@ -1702,9 +1705,9 @@
   };
   const FPS_FOV = 58;   // freeze look at authored defaults for screenshots
   const Q = new URLSearchParams(location.search);
-  const SHOT_X = parseFloat(Q.get('px') || '-10'), SHOT_Z = parseFloat(Q.get('pz') || '9'), SHOT_YAW = parseFloat(Q.get('pyaw') || '0');
+  const SHOT_X = parseFloat(Q.get('px') || '-10'), SHOT_Z = parseFloat(Q.get('pz') || '9'), SHOT_YAW = parseFloat(Q.get('pyaw') || '0'), SHOT_PITCH = parseFloat(Q.get('ppitch') || '-0.155');
   const player = {
-    yaw: SHOT ? SHOT_YAW : 0, pitch: -0.155, locked: false, lockBlocked: false,
+    yaw: SHOT ? SHOT_YAW : 0, pitch: SHOT ? SHOT_PITCH : -0.155, locked: false, lockBlocked: false,
     steer: new THREE.Vector2(), lookVel: new THREE.Vector2(),
     pos: new THREE.Vector3(SHOT ? SHOT_X : -152, 0, SHOT ? SHOT_Z : 9),
     keys: {}, eye: 1.9, stepT: 0, moving: false,
@@ -1827,6 +1830,7 @@
     clock += dt;
 
     riverUniforms.uTime.value = clock;
+    if (riverMat) { riverMat.uniforms.uTime.value = clock; riverMat.uniforms.uCamX.value = camera.position.x; }
     RIM.dir.copy(sun.position).sub(sun.target.position).normalize();
     for (let i = 0; i < flashLights.length; i++) flashLights[i].visible = flashLights[i].intensity > 0.05;
 
@@ -1957,7 +1961,7 @@
   window.__key = (c, v) => { player.keys[c] = v; };
   window.__step = (n, dtStep) => { for (let i = 0; i < n; i++) tick(dtStep || 0.0166); };
   window.__reload = () => { ammo = 6; updateRounds(); };
-  window.__enemyFire = () => { for (const o of Enemies.list) { o.userData.flash.material.opacity = 1; o.userData.fpt.intensity = 8.0; } };
+  window.__enemyFire = () => { for (const o of Enemies.list) { o.userData.flash.material.opacity = 1; o.userData.fpt.intensity = 3.4; } };
   window.__three = { scene, camera, THREE, cliffs };
   window.__renderer = renderer; window.__composer = composer;
   window.__probe = function () {
