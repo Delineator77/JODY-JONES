@@ -132,6 +132,31 @@
   #deathScreen { position:fixed; inset:0; z-index:32; display:flex; flex-direction:column; align-items:center; justify-content:center;
     text-align:center; background:radial-gradient(120% 100% at 50% 40%, rgba(96,20,14,.4), rgba(4,3,6,.94)); }
   #deathScreen.hidden { opacity:0; visibility:hidden; transition:opacity .8s ease, visibility .8s; }
+
+  /* Touch controls — virtual joystick (left thumb) + fire/ADS/reload buttons (right thumb).
+     Only mounted on touch devices (canyon.js feature-detects and shows #touchUI). */
+  #touchUI { position:fixed; inset:0; z-index:19; }
+  #touchUI.hidden { opacity:0 !important; visibility:hidden; }
+  #joyBase { position:fixed; left:0; top:0; width:108px; height:108px; margin:-54px;
+    border-radius:50%; background:rgba(20,26,44,.4); border:2px solid rgba(233,220,195,.35);
+    opacity:0; transition:opacity .12s; pointer-events:none; touch-action:none; }
+  #joyBase.active { opacity:1; }
+  #joyStick { position:absolute; left:50%; top:50%; width:48px; height:48px; margin:-24px 0 0 -24px;
+    border-radius:50%; background:rgba(244,180,81,.55); border:2px solid rgba(244,180,81,.9); }
+  .tbtn { position:fixed; border-radius:50%; border:2px solid rgba(233,220,195,.4);
+    background:rgba(20,26,44,.55); color:var(--paper); font-family:inherit; letter-spacing:.1em;
+    text-transform:uppercase; font-weight:600; touch-action:none; -webkit-tap-highlight-color:transparent; }
+  .tbtn:active { background:rgba(224,138,46,.55); }
+  #fireBtnT { right:22px; bottom:calc(9vh + 88px); width:78px; height:78px; font-size:13px;
+    background:rgba(178,59,46,.5); border-color:rgba(244,180,81,.65); box-shadow:0 4px 18px rgba(0,0,0,.5); }
+  #adsBtnT { right:112px; bottom:calc(9vh + 100px); width:54px; height:54px; font-size:10px; }
+  #reloadBtnT { right:112px; bottom:calc(9vh + 164px); width:50px; height:50px; font-size:10px; }
+
+  /* Portrait nudge — the run is a landscape composition; touch play needs the width */
+  #rotateHint { position:fixed; inset:0; z-index:50; display:none; align-items:center; justify-content:center;
+    text-align:center; background:#05060c; color:var(--paper); padding:0 44px; font-size:15px;
+    letter-spacing:.06em; line-height:1.6; }
+  body.touch-controls.portrait-warn #rotateHint { display:flex; }
 </style>
 </head>
 <body>
@@ -174,8 +199,10 @@
     <div class="rule"></div>
     <div class="flavor">The canyon runs east, and so must you — cover to cover along the river, across two fords, and through the Narrows where Harlan Crow waits with his Sharps. The sun's already left the canyon floor. Make your shots count.</div>
     <div class="start"><button id="startBtn" class="btn">Take Cover</button></div>
-    <div class="controls"><b>WASD</b> move &nbsp;·&nbsp; <b>Mouse</b> aim &nbsp;·&nbsp; <b>Click / Space</b> fire &nbsp;·&nbsp;
+    <div class="controls" id="controlsDesktop"><b>WASD</b> move &nbsp;·&nbsp; <b>Mouse</b> aim &nbsp;·&nbsp; <b>Click / Space</b> fire &nbsp;·&nbsp;
       <b>Right-click</b> aim down sights &nbsp;·&nbsp; <b>R</b> reload &nbsp;·&nbsp; <b>C</b> cinematic</div>
+    <div class="controls hidden" id="controlsTouch"><b>Left thumb</b> move &nbsp;·&nbsp; <b>Drag right side</b> aim &nbsp;·&nbsp;
+      <b>FIRE</b> shoot &nbsp;·&nbsp; <b>ADS</b> aim down sights &nbsp;·&nbsp; <b>R</b> reload</div>
   </div>
 
   <div id="deathScreen" class="hidden">
@@ -185,6 +212,14 @@
     <div class="flavor">Jody goes down behind the rocks. Somewhere across the water, a hammer cocks back.</div>
     <div class="start"><button id="retryBtn" class="btn">Try Again</button></div>
   </div>
+
+  <div id="touchUI" class="hidden">
+    <div id="joyBase"><div id="joyStick"></div></div>
+    <button id="reloadBtnT" class="tbtn">R</button>
+    <button id="adsBtnT" class="tbtn">ADS</button>
+    <button id="fireBtnT" class="tbtn">FIRE</button>
+  </div>
+  <div id="rotateHint">Turn your device sideways —<br>the canyon runs wide.</div>
 
   <script src="vendor/three.min.js"></script>
   <script src="vendor/postprocessing.js"></script>

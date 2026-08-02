@@ -16,7 +16,13 @@
     healthFill: $('healthFill'), hostilesNum: $('hostilesNum'), hostilesTotal: $('hostilesTotal'),
     hitmarker: $('hitmarker'), dmgDir: $('dmgDir'),
     deathScreen: $('deathScreen'), retryBtn: $('retryBtn'),
+    controlsDesktop: $('controlsDesktop'), controlsTouch: $('controlsTouch'),
+    touchUI: $('touchUI'), joyBase: $('joyBase'), joyStick: $('joyStick'),
+    fireBtnT: $('fireBtnT'), adsBtnT: $('adsBtnT'), reloadBtnT: $('reloadBtnT'),
   };
+  // Touch devices get an on-screen joystick + buttons instead of WASD/mouse/pointer-lock
+  // (pointer lock doesn't exist on iOS Safari and is unreliable on Android browsers).
+  const TOUCH = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
   const lerp = (a, b, t) => a + (b - a) * t;
   // Seeded RNG so the canyon is a FIXED, art-directed layout (not a new random one per load).
@@ -99,7 +105,11 @@
      RENDERER / SCENE / CAMERA
      ========================================================================= */
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+  // Phone GPUs push far fewer pixels/sec than desktop; the composer already runs three
+  // full-screen passes (bloom, grade, ink) on top of the scene, so an uncapped 3x-ish
+  // retina pixel ratio on a mid-range phone tanks the frame rate. 1.5 keeps it sharp
+  // enough for the ink linework without doubling the fill cost of a 2x cap.
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, TOUCH ? 1.5 : 2));
   renderer.setSize(innerWidth, innerHeight);
   // Flat graphic color: no sRGB output curve + no tonemapping => authored hex renders as-is.
   // (This build predates ColorManagement, so sRGB output would lift/desaturate the flats.)
@@ -1806,6 +1816,7 @@
     pos: new THREE.Vector3(SHOT ? SHOT_X : -152, 0, SHOT ? SHOT_Z : 9),
     keys: {}, eye: 1.9, stepT: 0, moving: false,
     health: 100, maxHealth: 100, alive: true, ads: false,
+    touchMove: { x: 0, z: 0 },   // virtual joystick vector, added into the WASD axes in tick()
   };
   const START_POS = player.pos.clone(), START_YAW = player.yaw, START_PITCH = player.pitch;
   const PITCH_LO = -0.45, PITCH_HI = 0.45;
@@ -1813,7 +1824,7 @@
   let nerve = 1, shake = 0;
 
   function onMove(e) {
-    if (SHOT) return;
+    if (SHOT || TOUCH) return;
     if (player.locked) {
       const s = (player.ads ? 0.55 : 1) * 0.0022;
       player.yaw -= e.movementX * s;
@@ -1852,6 +1863,90 @@
     player.keys[e.code] = false;
     if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') player.steady = false;
   });
+
+  /* -----------------------------------------------------------------------
+     TOUCH CONTROLS — a floating virtual joystick (left half of the screen)
+     drives movement, a drag on the right half aims (the touch equivalent of
+     pointer-lock's relative mouse deltas), and three on-screen buttons cover
+     fire / ADS / reload. Only wired up on touch devices; desktop mouse/key
+     handling above is untouched.
+     ----------------------------------------------------------------------- */
+  if (TOUCH) {
+    let joyId = null, joyCX = 0, joyCY = 0;
+    const JOY_R = 52;
+    let lookId = null, lookX = 0, lookY = 0;
+    const TOUCH_LOOK_SENS = 0.0032;
+
+    function isUIButton(t) { return t === dom.fireBtnT || t === dom.adsBtnT || t === dom.reloadBtnT; }
+
+    document.addEventListener('touchstart', (e) => {
+      if (!running) return;
+      for (const t of e.changedTouches) {
+        if (isUIButton(t.target)) continue;
+        if (joyId === null && t.clientX < innerWidth * 0.5) {
+          joyId = t.identifier; joyCX = t.clientX; joyCY = t.clientY;
+          dom.joyBase.style.left = joyCX + 'px'; dom.joyBase.style.top = joyCY + 'px';
+          dom.joyBase.classList.add('active');
+          dom.joyStick.style.transform = 'translate(0,0)';
+        } else if (lookId === null && t.clientX >= innerWidth * 0.5) {
+          lookId = t.identifier; lookX = t.clientX; lookY = t.clientY;
+        }
+      }
+      e.preventDefault();
+    }, { passive: false });
+
+    document.addEventListener('touchmove', (e) => {
+      for (const t of e.changedTouches) {
+        if (t.identifier === joyId) {
+          const dx = clamp(t.clientX - joyCX, -JOY_R, JOY_R), dy = clamp(t.clientY - joyCY, -JOY_R, JOY_R);
+          dom.joyStick.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+          player.touchMove.x = dx / JOY_R; player.touchMove.z = -dy / JOY_R;
+        } else if (t.identifier === lookId) {
+          const dx = t.clientX - lookX, dy = t.clientY - lookY;
+          const s = (player.ads ? 0.55 : 1) * TOUCH_LOOK_SENS;
+          player.yaw -= dx * s;
+          player.pitch = clamp(player.pitch - dy * s, PITCH_LO, PITCH_HI);
+          player.lookVel.set(dx * 0.6, dy * 0.6);
+          lookX = t.clientX; lookY = t.clientY;
+        }
+      }
+      if (joyId !== null || lookId !== null) e.preventDefault();
+    }, { passive: false });
+
+    function touchEnd(e) {
+      for (const t of e.changedTouches) {
+        if (t.identifier === joyId) {
+          joyId = null; player.touchMove.x = 0; player.touchMove.z = 0;
+          dom.joyBase.classList.remove('active');
+        } else if (t.identifier === lookId) { lookId = null; }
+      }
+    }
+    document.addEventListener('touchend', touchEnd);
+    document.addEventListener('touchcancel', touchEnd);
+
+    dom.fireBtnT.addEventListener('touchstart', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      if (running) fire();
+    }, { passive: false });
+    dom.reloadBtnT.addEventListener('touchstart', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      if (running) reload();
+    }, { passive: false });
+    dom.adsBtnT.addEventListener('touchstart', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      if (running && player.alive) { player.ads = true; Colt.setADS(true); }
+    }, { passive: false });
+    dom.adsBtnT.addEventListener('touchend', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      player.ads = false; Colt.setADS(false);
+    }, { passive: false });
+
+    // Landscape nudge: the composition is built wide, so ask for a rotate in portrait.
+    function checkOrientation() { document.body.classList.toggle('portrait-warn', innerWidth < innerHeight); }
+    addEventListener('resize', checkOrientation);
+    addEventListener('orientationchange', checkOrientation);
+    checkOrientation();
+  }
 
   function requestLock() {
     if (SHOT || player.lockBlocked) return;
@@ -2024,6 +2119,9 @@
       let ix = 0, iz = 0;
       if (player.keys['KeyW']) iz += 1; if (player.keys['KeyS']) iz -= 1;
       if (player.keys['KeyA']) ix -= 1; if (player.keys['KeyD']) ix += 1;
+      // virtual joystick — small deadzone so an idle thumb near centre doesn't drift,
+      // then digital-full-speed in that direction, matching the WASD feel above.
+      if (Math.hypot(player.touchMove.x, player.touchMove.z) > 0.15) { ix += player.touchMove.x; iz += player.touchMove.z; }
       const mlen = Math.hypot(ix, iz);
       player.moving = mlen > 0;
       const onFord = Math.abs(player.pos.x + 60) < 9 || Math.abs(player.pos.x - 115) < 9;
@@ -2122,6 +2220,11 @@
   function boot() {
     dom.loading.classList.add('hidden');
     dom.title.classList.remove('hidden');
+    if (TOUCH) {
+      document.body.classList.add('touch-controls');
+      dom.controlsDesktop.classList.add('hidden');
+      dom.controlsTouch.classList.remove('hidden');
+    }
     frame();
   }
   dom.startBtn.addEventListener('click', () => {
@@ -2132,7 +2235,8 @@
     dom.hostilesTotal.textContent = Enemies.list.length;
     updateHostilesUI(); updateHealthUI();
     running = true;
-    requestLock();
+    if (TOUCH) dom.touchUI.classList.remove('hidden');
+    else requestLock();
   });
   dom.retryBtn.addEventListener('click', () => { Audio.resume(); restartRun(); });
 
