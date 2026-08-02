@@ -1819,6 +1819,7 @@
     player.keys[e.code] = true;
     if (e.code === 'KeyR') reload();
     if (e.code === 'KeyC') cine = !cine;
+    if (e.code === 'Space') { e.preventDefault(); if (running) fire(); }
     if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') player.steady = true;
   });
   document.addEventListener('keyup', (e) => {
