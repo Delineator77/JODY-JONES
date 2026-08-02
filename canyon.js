@@ -131,7 +131,7 @@
   const gradePass = new THREE.ShaderPass({
     uniforms: {
       tDiffuse: { value: null },
-      uBands: { value: 6.0 },        // luminance steps (lower = flatter//more graphic)
+      uBands: { value: 4.0 },        // luminance steps (lower = flatter//more graphic) — Art Bible calls for a 3-4 step cel ramp
       uMix: { value: 0.80 },         // how strongly to posterize
       uSat: { value: TOD.grade.sat },
       uShadowTint: { value: new THREE.Color(TOD.grade.shadow) },
@@ -556,16 +556,20 @@
         // sponged darker blotches on the faces (the sheets' mottled paint texture)
         const wx = cx + pp.getX(k) * rx, wz = pp.getZ(k) * rz;
         const blotch = fbm3(wx * 0.24 + seed, wy * 0.24, wz * 0.24, 3);
-        if (blotch > 0.60) c.multiplyScalar(0.85);
-        else if (blotch < 0.38) c.multiplyScalar(1.06);
+        if (blotch > 0.64) c.multiplyScalar(0.90);
+        else if (blotch < 0.34) c.multiplyScalar(1.04);
         // horizontal strata banding low on the wall
-        if (wy < origin.y + h * 0.32) c.multiplyScalar(0.90 + (Math.sin(wy * 2.4 + seed) * 0.5 + 0.5) * 0.12);
+        if (wy < origin.y + h * 0.32) c.multiplyScalar(0.93 + (Math.sin(wy * 2.4 + seed) * 0.5 + 0.5) * 0.09);
         colors[k * 3] = c.r; colors[k * 3 + 1] = c.g; colors[k * 3 + 2] = c.b;
       }
       geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      // Rim kept low here (vs. full strength on hero objects): a bumpy fluted wall at full
+      // rim strength catches the fresnel edge on every little ridge and reads as a scatter
+      // of thin glints rather than one clean stroke — Art Bible rule 4, background masses
+      // read by broad color/depth, not texture noise.
       const m = new THREE.Mesh(geo, addRim(new THREE.MeshStandardMaterial({
         vertexColors: true, roughness: 0.97, metalness: 0.0, fog: true,
-      })));
+      }), 0.4));
       m.scale.set(rx, scaleY, rz);
       m.position.set(cx, baseY, rnd(-0.5, 0.5) * depthAmt);
       m.rotation.y = rnd(-0.4, 0.4);
