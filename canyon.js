@@ -17,7 +17,7 @@
     hitmarker: $('hitmarker'), dmgDir: $('dmgDir'),
     deathScreen: $('deathScreen'), retryBtn: $('retryBtn'),
     controlsDesktop: $('controlsDesktop'), controlsTouch: $('controlsTouch'),
-    touchUI: $('touchUI'), joyBase: $('joyBase'), joyStick: $('joyStick'),
+    touchUI: $('touchUI'), dpadUp: $('dpadUp'), dpadDown: $('dpadDown'), dpadLeft: $('dpadLeft'), dpadRight: $('dpadRight'),
     fireBtnT: $('fireBtnT'), adsBtnT: $('adsBtnT'), reloadBtnT: $('reloadBtnT'),
   };
   // Touch devices get an on-screen joystick + buttons instead of WASD/mouse/pointer-lock
@@ -1865,64 +1865,71 @@
   });
 
   /* -----------------------------------------------------------------------
-     TOUCH CONTROLS — a floating virtual joystick (left half of the screen)
-     drives movement, a drag on the right half aims (the touch equivalent of
+     TOUCH CONTROLS — a fixed 4-way D-pad (bottom-left) drives movement, a
+     drag anywhere on the right half aims (the touch equivalent of
      pointer-lock's relative mouse deltas), and three on-screen buttons cover
      fire / ADS / reload. Only wired up on touch devices; desktop mouse/key
      handling above is untouched.
      ----------------------------------------------------------------------- */
   if (TOUCH) {
-    let joyId = null, joyCX = 0, joyCY = 0;
-    const JOY_R = 52;
     let lookId = null, lookX = 0, lookY = 0;
     const TOUCH_LOOK_SENS = 0.0032;
-
-    function isUIButton(t) { return t === dom.fireBtnT || t === dom.adsBtnT || t === dom.reloadBtnT; }
 
     document.addEventListener('touchstart', (e) => {
       if (!running) return;
       for (const t of e.changedTouches) {
-        if (isUIButton(t.target)) continue;
-        if (joyId === null && t.clientX < innerWidth * 0.5) {
-          joyId = t.identifier; joyCX = t.clientX; joyCY = t.clientY;
-          dom.joyBase.style.left = joyCX + 'px'; dom.joyBase.style.top = joyCY + 'px';
-          dom.joyBase.classList.add('active');
-          dom.joyStick.style.transform = 'translate(0,0)';
-        } else if (lookId === null && t.clientX >= innerWidth * 0.5) {
+        if (lookId === null && t.clientX >= innerWidth * 0.5) {
           lookId = t.identifier; lookX = t.clientX; lookY = t.clientY;
         }
       }
-      e.preventDefault();
     }, { passive: false });
 
     document.addEventListener('touchmove', (e) => {
       for (const t of e.changedTouches) {
-        if (t.identifier === joyId) {
-          const dx = clamp(t.clientX - joyCX, -JOY_R, JOY_R), dy = clamp(t.clientY - joyCY, -JOY_R, JOY_R);
-          dom.joyStick.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
-          player.touchMove.x = dx / JOY_R; player.touchMove.z = -dy / JOY_R;
-        } else if (t.identifier === lookId) {
+        if (t.identifier === lookId) {
           const dx = t.clientX - lookX, dy = t.clientY - lookY;
           const s = (player.ads ? 0.55 : 1) * TOUCH_LOOK_SENS;
           player.yaw -= dx * s;
           player.pitch = clamp(player.pitch - dy * s, PITCH_LO, PITCH_HI);
           player.lookVel.set(dx * 0.6, dy * 0.6);
           lookX = t.clientX; lookY = t.clientY;
+          e.preventDefault();
         }
       }
-      if (joyId !== null || lookId !== null) e.preventDefault();
     }, { passive: false });
 
-    function touchEnd(e) {
-      for (const t of e.changedTouches) {
-        if (t.identifier === joyId) {
-          joyId = null; player.touchMove.x = 0; player.touchMove.z = 0;
-          dom.joyBase.classList.remove('active');
-        } else if (t.identifier === lookId) { lookId = null; }
-      }
+    document.addEventListener('touchend', (e) => {
+      for (const t of e.changedTouches) if (t.identifier === lookId) lookId = null;
+    });
+    document.addEventListener('touchcancel', (e) => {
+      for (const t of e.changedTouches) if (t.identifier === lookId) lookId = null;
+    });
+
+    // Discrete 4-way pad: each arrow is its own button, held state combines
+    // into a (possibly diagonal) direction — same digital feel as WASD.
+    const held = { up: false, down: false, left: false, right: false };
+    function recomputeDpad() {
+      let x = 0, z = 0;
+      if (held.up) z += 1; if (held.down) z -= 1;
+      if (held.left) x -= 1; if (held.right) x += 1;
+      const len = Math.hypot(x, z);
+      player.touchMove.x = len > 0 ? x / len : 0;
+      player.touchMove.z = len > 0 ? z / len : 0;
     }
-    document.addEventListener('touchend', touchEnd);
-    document.addEventListener('touchcancel', touchEnd);
+    function wireDpadBtn(el, key) {
+      el.addEventListener('touchstart', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        held[key] = true; el.classList.add('held'); recomputeDpad();
+      }, { passive: false });
+      const release = (e) => {
+        e.preventDefault(); e.stopPropagation();
+        held[key] = false; el.classList.remove('held'); recomputeDpad();
+      };
+      el.addEventListener('touchend', release, { passive: false });
+      el.addEventListener('touchcancel', release, { passive: false });
+    }
+    wireDpadBtn(dom.dpadUp, 'up'); wireDpadBtn(dom.dpadDown, 'down');
+    wireDpadBtn(dom.dpadLeft, 'left'); wireDpadBtn(dom.dpadRight, 'right');
 
     dom.fireBtnT.addEventListener('touchstart', (e) => {
       e.preventDefault(); e.stopPropagation();

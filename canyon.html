@@ -133,16 +133,17 @@
     text-align:center; background:radial-gradient(120% 100% at 50% 40%, rgba(96,20,14,.4), rgba(4,3,6,.94)); }
   #deathScreen.hidden { opacity:0; visibility:hidden; transition:opacity .8s ease, visibility .8s; }
 
-  /* Touch controls — virtual joystick (left thumb) + fire/ADS/reload buttons (right thumb).
+  /* Touch controls — a 4-way D-pad (left thumb) + fire/ADS/reload buttons (right thumb).
      Only mounted on touch devices (canyon.js feature-detects and shows #touchUI). */
   #touchUI { position:fixed; inset:0; z-index:19; }
   #touchUI.hidden { opacity:0 !important; visibility:hidden; }
-  #joyBase { position:fixed; left:0; top:0; width:108px; height:108px; margin:-54px;
-    border-radius:50%; background:rgba(20,26,44,.4); border:2px solid rgba(233,220,195,.35);
-    opacity:0; transition:opacity .12s; pointer-events:none; touch-action:none; }
-  #joyBase.active { opacity:1; }
-  #joyStick { position:absolute; left:50%; top:50%; width:48px; height:48px; margin:-24px 0 0 -24px;
-    border-radius:50%; background:rgba(244,180,81,.55); border:2px solid rgba(244,180,81,.9); }
+  #dpad { position:fixed; left:22px; bottom:calc(9vh + 16px); width:168px; height:168px;
+    display:grid; grid-template-columns:56px 56px 56px; grid-template-rows:56px 56px 56px;
+    grid-template-areas:". up ." "left . right" ". down ."; }
+  .dbtn { border-radius:9px; border:2px solid rgba(233,220,195,.4); background:rgba(20,26,44,.5);
+    color:var(--paper-dim); font-size:20px; line-height:1; touch-action:none; -webkit-tap-highlight-color:transparent; }
+  .dbtn.held { background:rgba(224,138,46,.55); color:var(--paper); border-color:rgba(244,180,81,.7); }
+  .dbtn-up { grid-area:up; } .dbtn-down { grid-area:down; } .dbtn-left { grid-area:left; } .dbtn-right { grid-area:right; }
   .tbtn { position:fixed; border-radius:50%; border:2px solid rgba(233,220,195,.4);
     background:rgba(20,26,44,.55); color:var(--paper); font-family:inherit; letter-spacing:.1em;
     text-transform:uppercase; font-weight:600; touch-action:none; -webkit-tap-highlight-color:transparent; }
@@ -201,7 +202,7 @@
     <div class="start"><button id="startBtn" class="btn">Take Cover</button></div>
     <div class="controls" id="controlsDesktop"><b>WASD</b> move &nbsp;·&nbsp; <b>Mouse</b> aim &nbsp;·&nbsp; <b>Click / Space</b> fire &nbsp;·&nbsp;
       <b>Right-click</b> aim down sights &nbsp;·&nbsp; <b>R</b> reload &nbsp;·&nbsp; <b>C</b> cinematic</div>
-    <div class="controls hidden" id="controlsTouch"><b>Left thumb</b> move &nbsp;·&nbsp; <b>Drag right side</b> aim &nbsp;·&nbsp;
+    <div class="controls hidden" id="controlsTouch"><b>D-pad</b> move &nbsp;·&nbsp; <b>Drag right side</b> aim &nbsp;·&nbsp;
       <b>FIRE</b> shoot &nbsp;·&nbsp; <b>ADS</b> aim down sights &nbsp;·&nbsp; <b>R</b> reload</div>
   </div>
 
@@ -214,7 +215,12 @@
   </div>
 
   <div id="touchUI" class="hidden">
-    <div id="joyBase"><div id="joyStick"></div></div>
+    <div id="dpad">
+      <button id="dpadUp" class="dbtn dbtn-up" aria-label="Forward">&#9650;</button>
+      <button id="dpadLeft" class="dbtn dbtn-left" aria-label="Left">&#9664;</button>
+      <button id="dpadRight" class="dbtn dbtn-right" aria-label="Right">&#9654;</button>
+      <button id="dpadDown" class="dbtn dbtn-down" aria-label="Back">&#9660;</button>
+    </div>
     <button id="reloadBtnT" class="tbtn">R</button>
     <button id="adsBtnT" class="tbtn">ADS</button>
     <button id="fireBtnT" class="tbtn">FIRE</button>
